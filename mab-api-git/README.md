@@ -22,7 +22,7 @@ Esta API recebe dados de experimentos A/B (impressões e clicks por variante), p
 - **Algoritmo**: Thompson Sampling com modelo Beta-Bernoulli
 - **Banco de dados**: Snowflake
 - **Multi-variante**: Suporta N variantes (não apenas A/B)
-- **Janela temporal**: 14 dias por padrão
+- **Tratamento de não-estacionariedade** via janela temporal
 - **Documentação**: Swagger UI automático
 
 ## Arquitetura

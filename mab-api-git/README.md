@@ -57,23 +57,34 @@ Usuário acessa página → CDP gera session_id → Hash(session_id) % 100 → D
 
 Isso garante consistência durante a navegação sem depender de login.
 
-## Algoritmo
+## Algoritmo: Thompson Sampling
 
-### Thompson Sampling
+### O problema
+Queremos alocar mais tráfego para a variante que provavelmente é melhor, 
+mas sem ignorar variantes que ainda têm poucas amostras.
 
-Usa modelo Beta-Bernoulli para otimizar CTR:
+### A intuição
+Para cada variante, mantemos uma estimativa de "quão bom" ela pode ser, 
+junto com nossa incerteza sobre isso. Variantes com poucos dados têm 
+incerteza alta — podem ser ótimas ou péssimas.
 
-- **Prior**: Beta(1, 1) = Uniforme
-- **Posterior**: Beta(clicks + 1, impressions - clicks + 1)
-- **Alocação**: Simulação Monte Carlo (10.000 amostras)
+A cada rodada, sorteamos um valor possível de CTR para cada variante 
+(respeitando a incerteza) e alocamos mais tráfego para quem "ganhou" o sorteio.
 
-### Por que Thompson Sampling?
+Variantes incertas às vezes ganham por sorte → recebem tráfego → coletamos 
+dados → incerteza diminui. Isso balanceia exploração e explotação naturalmente.
 
-| Critério | Thompson Sampling | UCB |
-|----------|-------------------|-----|
-| Fundamentação | Bayesiano | Frequentista |
-| CTR | Natural (Beta-Bernoulli) | Menos intuitivo |
-| Exploration/Exploitation | Probabilístico | Determinístico |
+### Implementação
+- Cada variante tem uma distribuição Beta(α, β)
+- α = cliques + 1
+- β = impressões - cliques + 1
+- Amostramos 10.000 valores de cada distribuição
+- Alocação = % de vezes que cada variante teve o maior valor
+
+### Por que Thompson Sampling e não UCB?
+UCB calcula um limite superior fixo e sempre escolhe o maior. 
+Thompson Sampling sorteia, então variantes "azaradas" ainda têm chance. 
+Na prática, converge mais rápido para a melhor variante.
 
 ## Instalação
 

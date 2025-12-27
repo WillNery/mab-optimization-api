@@ -56,34 +56,74 @@ Usuário acessa página → CDP gera session_id → Hash(session_id) % 100 → D
 
 Isso garante consistência durante a navegação sem depender de login.
 
-## Algoritmo: Thompson Sampling
+## Algoritmo
 
-### O problema
-Queremos alocar mais tráfego para a variante que provavelmente é melhor, 
-mas sem ignorar variantes que ainda têm poucas amostras.
+### Formulação
 
-### A intuição
-Para cada variante, mantemos uma estimativa de "quão bom" ela pode ser, 
-junto com nossa incerteza sobre isso. Variantes com poucos dados têm 
-incerteza alta — podem ser ótimas ou péssimas.
+Cada variante é modelada como uma variável Bernoulli (clique / não clique), com incerteza representada por uma distribuição **Beta**.
 
-A cada rodada, sorteamos um valor possível de CTR para cada variante 
-(respeitando a incerteza) e alocamos mais tráfego para quem "ganhou" o sorteio.
+Para cada variante `i`:
 
-Variantes incertas às vezes ganham por sorte → recebem tráfego → coletamos 
-dados → incerteza diminui. Isso balanceia exploração e explotação naturalmente.
+```
+CTR_i ~ Beta(α_i, β_i)
+```
 
-### Implementação
-- Cada variante tem uma distribuição Beta(α, β)
-- α = cliques + 1
-- β = impressões - cliques + 1
-- Amostramos 10.000 valores de cada distribuição
-- Alocação = % de vezes que cada variante teve o maior valor
+Onde:
 
-### Por que Thompson Sampling e não UCB?
-UCB calcula um limite superior fixo e sempre escolhe o maior. 
-Thompson Sampling sorteia, então variantes "azaradas" ainda têm chance. 
-Na prática, converge mais rápido para a melhor variante.
+```
+α_i = α₀ + clicks_i
+β_i = β₀ + impressions_i - clicks_i
+```
+
+### Prior (Fallback)
+
+Como o teste não fornece histórico agregado suficiente, é utilizado um **prior fraco e explicitamente assumido**:
+
+```
+α₀ = 1
+β₀ = 99
+```
+
+- CTR esperada ≈ 1%
+- Representa conhecimento prévio mínimo
+- Evita comportamento extremo no cold start
+
+### Decisão
+
+Em cada rodada:
+
+1. Amostramos valores de CTR de cada distribuição Beta
+2. Selecionamos a variante com maior valor amostrado
+3. Repetimos o processo múltiplas vezes
+4. A alocação final é a proporção de vezes que cada variante foi selecionada
+
+---
+
+## Janela Temporal e Fallback
+
+O ambiente é tratado como **não estacionário**. Para evitar aprender com dados obsoletos, o algoritmo utiliza janelas temporais.
+
+### Regras
+
+- **Janela padrão**: últimos 14 dias
+- **Volume mínimo**: 200 impressões por variante
+- **Idade máxima absoluta**: 30 dias
+
+### Lógica
+
+```
+1. Coletar métricas dos últimos 14 dias
+2. Se uma variante tiver >= 200 impressões:
+       usar esses dados
+3. Caso contrário:
+       expandir janela até 30 dias
+4. Se ainda assim não atingir 200 impressões:
+       usar apenas o prior (fallback)
+```
+
+Isso garante estabilidade estatística sem comprometer adaptação a mudanças recentes.
+
+---
 
 ## Instalação
 

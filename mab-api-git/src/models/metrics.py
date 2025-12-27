@@ -1,7 +1,7 @@
 """Pydantic models for metrics."""
 
 from datetime import date as date_type
-from typing import List
+from typing import List, Optional, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -38,6 +38,12 @@ class MetricsBatchRequest(BaseModel):
     metrics: List[MetricInput] = Field(
         ..., min_length=1, description="List of metrics per variant"
     )
+    source: Literal["api", "gam", "cdp", "manual"] = Field(
+        default="api", description="Origin of the data"
+    )
+    batch_id: Optional[str] = Field(
+        default=None, description="ID of the ingestion batch for traceability"
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -49,6 +55,8 @@ class MetricsBatchRequest(BaseModel):
                         {"variant_name": "variant_a", "impressions": 10000, "clicks": 420},
                         {"variant_name": "variant_b", "impressions": 10000, "clicks": 380},
                     ],
+                    "source": "gam",
+                    "batch_id": "batch_20250115_001"
                 }
             ]
         }
@@ -61,3 +69,4 @@ class MetricsResponse(BaseModel):
     message: str
     date: date_type
     variants_updated: int
+    batch_id: Optional[str] = None

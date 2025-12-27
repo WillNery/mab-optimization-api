@@ -131,10 +131,13 @@ class ExperimentService:
                 metric_date=data.date,
                 impressions=metric.impressions,
                 clicks=metric.clicks,
+                source=data.source,
+                batch_id=data.batch_id,
             )
 
         return MetricsResponse(
             message="Metrics recorded successfully",
             date=data.date,
             variants_updated=len(data.metrics),
+            batch_id=data.batch_id,
         )

@@ -92,7 +92,6 @@ Na prática, converge mais rápido para a melhor variante.
 
 - Python 3.11+
 - Snowflake account
-- Docker (opcional)
 
 ### Setup Local
 
@@ -120,12 +119,6 @@ cp .env.example .env
 # Executar scripts SQL
 snowsql -f infrastructure/snowflake/01_create_schema.sql
 snowsql -f infrastructure/snowflake/02_create_tables.sql
-```
-
-### Docker
-
-```bash
-docker-compose up --build
 ```
 
 ## Configuração
@@ -325,8 +318,6 @@ mab-api/
 ├── tests/
 │   ├── unit/
 │   └── integration/
-├── Dockerfile
-├── docker-compose.yml
 └── pyproject.toml
 ```
 

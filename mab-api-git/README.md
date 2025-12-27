@@ -12,7 +12,6 @@ API para otimização de tráfego em testes A/B usando algoritmo Multi-Armed Ban
 - [Uso](#uso)
 - [API Endpoints](#api-endpoints)
 - [Testes](#testes)
-- [Considerações para Produção](#considerações-para-produção)
 
 ## Visão Geral
 

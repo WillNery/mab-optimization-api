@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import date
+from typing import Optional
 
 from src.repositories.database import execute_query, get_connection
 from src.sql import MetricsQueries
@@ -17,6 +18,8 @@ class MetricsRepository:
         metric_date: date,
         impressions: int,
         clicks: int,
+        source: str = "api",
+        batch_id: Optional[str] = None,
     ) -> None:
         """
         Insert metrics into both raw and daily tables.
@@ -29,6 +32,8 @@ class MetricsRepository:
             metric_date: Date of the metrics
             impressions: Number of impressions
             clicks: Number of clicks
+            source: Origin of data (api, gam, cdp, manual)
+            batch_id: ID of the ingestion batch for traceability
         """
         raw_id = str(uuid.uuid4())
         daily_id = str(uuid.uuid4())
@@ -45,6 +50,8 @@ class MetricsRepository:
                         "metric_date": metric_date,
                         "impressions": impressions,
                         "clicks": clicks,
+                        "source": source,
+                        "batch_id": batch_id,
                     },
                 )
 

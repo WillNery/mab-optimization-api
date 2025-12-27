@@ -269,7 +269,3 @@ mab-api/
 │   └── integration/
 └── pyproject.toml
 ```
-
-## Licença
-
-Projeto desenvolvido como teste técnico para Activeview.

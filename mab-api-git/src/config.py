@@ -20,7 +20,14 @@ class Settings(BaseSettings):
 
     # Algorithm configuration
     default_window_days: int = 14
+    max_window_days: int = 30
+    min_impressions: int = 200
     thompson_samples: int = 10000
+    
+    # Prior configuration (Beta distribution)
+    # Prior esperado ~1% CTR: alpha=1, beta=99 → E[CTR] = 1/(1+99) = 0.01
+    prior_alpha: int = 1
+    prior_beta: int = 99
 
     class Config:
         env_file = ".env"

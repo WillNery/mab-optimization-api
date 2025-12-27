@@ -125,15 +125,6 @@ ALTER TASK archive_old_raw_metrics RESUME;
 */
 
 -- ============================================
--- View para métricas com retenção (últimos 120 dias)
--- Útil para queries que não precisam de histórico completo
--- ============================================
-CREATE OR REPLACE VIEW raw_metrics_recent AS
-SELECT *
-FROM raw_metrics
-WHERE received_at >= DATEADD(day, -120, CURRENT_DATE());
-
--- ============================================
 -- Grants (permissões de acessos as tabelas)
 -- ============================================
 /*

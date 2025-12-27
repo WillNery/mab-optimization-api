@@ -191,17 +191,3 @@ Isso otimiza:
 - Queries por período em `raw_metrics`
 - A query principal do Thompson Sampling em `daily_metrics`
 
----
-
-## Diferença entre raw_metrics e daily_metrics
-
-| Aspecto | raw_metrics | daily_metrics |
-|---------|-------------|---------------|
-| Propósito | Auditoria | Cálculo |
-| Operação | INSERT (append) | UPSERT (merge) |
-| Duplicatas | Permitidas | Não permitidas |
-| Leitura | Rara (debug) | Frequente (API) |
-| Retenção | 120 dias hot | Permanente |
-| Observabilidade | source, batch_id | Não tem |
-
-Se `daily_metrics` corromper, pode ser reconstruída a partir de `raw_metrics`.

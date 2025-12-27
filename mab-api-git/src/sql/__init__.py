@@ -54,8 +54,8 @@ class MetricsQueries:
     """SQL queries for metrics."""
 
     INSERT_RAW = """
-        INSERT INTO raw_metrics (id, variant_id, metric_date, impressions, clicks)
-        VALUES (%(id)s, %(variant_id)s, %(metric_date)s, %(impressions)s, %(clicks)s)
+        INSERT INTO raw_metrics (id, variant_id, metric_date, impressions, clicks, source, batch_id)
+        VALUES (%(id)s, %(variant_id)s, %(metric_date)s, %(impressions)s, %(clicks)s, %(source)s, %(batch_id)s)
     """
 
     UPSERT_DAILY = """

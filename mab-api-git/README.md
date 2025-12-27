@@ -251,56 +251,6 @@ pytest tests/integration -v
 pytest --cov=src
 ```
 
-## Considerações para Produção
-
-### Contexto Activeview
-
-Para o ambiente da Activeview com 1000+ sites e alto volume de dados:
-
-#### 1. Ingestão de Alto Volume
-
-```
-Eventos → Kafka/Kinesis → S3 (Parquet) → Snowpipe → Snowflake
-```
-
-A implementação atual usa INSERT direto, adequado para o teste. Em produção:
-- Snowpipe para micro-batches automáticos
-- Parquet para compressão e performance
-
-#### 2. Agregação
-
-```
-raw_events → DBT/Dynamic Table → daily_metrics
-```
-
-- Dynamic Tables com refresh automático
-- Ou DBT rodando em schedule via Airflow
-
-#### 3. Multi-tenancy
-
-- Adicionar `site_id` em todas as tabelas
-- Clustering key por `(site_id, experiment_id)`
-
-#### 4. Custo Snowflake
-
-- Warehouse com auto-suspend de 60s
-- Cache Redis se alocação for consultada frequentemente
-
-#### 5. Métricas Adicionais
-
-A implementação otimiza **CTR** conforme especificado. A estrutura permite extensão para **receita por sessão** — bastaria adicionar campos no schema e ajustar a função objetivo.
-
-### Flexibilidade de Ingestão
-
-A API suporta dois cenários:
-
-| Cenário | Fluxo |
-|---------|-------|
-| **A** (teste) | Job → POST /metrics → Snowflake |
-| **B** (produção) | ETL Pipeline → Snowflake ← GET /allocation |
-
-Zero mudança de código para migrar de A para B.
-
 ## Estrutura do Projeto
 
 ```

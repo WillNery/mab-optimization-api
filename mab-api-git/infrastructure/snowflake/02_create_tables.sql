@@ -134,7 +134,7 @@ FROM raw_metrics
 WHERE received_at >= DATEADD(day, -120, CURRENT_DATE());
 
 -- ============================================
--- Grants (ajuste conforme sua estrutura de roles)
+-- Grants (permissões de acessos as tabelas)
 -- ============================================
 /*
 GRANT SELECT, INSERT ON experiments TO ROLE mab_api_role;

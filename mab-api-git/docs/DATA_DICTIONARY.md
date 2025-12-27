@@ -126,23 +126,6 @@ Armazena métricas limpas e deduplicadas. **Usada pelo algoritmo Thompson Sampli
 
 ---
 
-## View: `raw_metrics_recent`
-
-View que filtra apenas métricas recentes (últimos 120 dias).
-
-```sql
-CREATE VIEW raw_metrics_recent AS
-SELECT *
-FROM raw_metrics
-WHERE received_at >= DATEADD(day, -120, CURRENT_DATE());
-```
-
-**Uso:**
-- Queries que não precisam do histórico completo
-- Melhora performance ao evitar scan de dados antigos
-
----
-
 ## Fluxo de Dados
 
 ```

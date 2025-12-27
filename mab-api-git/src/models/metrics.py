@@ -1,6 +1,7 @@
 """Pydantic models for metrics."""
 
-from datetime import date
+from datetime import date as date_type
+from typing import List
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -33,8 +34,8 @@ class MetricInput(BaseModel):
 class MetricsBatchRequest(BaseModel):
     """Schema for batch metrics input."""
 
-    date: date = Field(..., description="Date for the metrics (YYYY-MM-DD)")
-    metrics: list[MetricInput] = Field(
+    date: date_type = Field(..., description="Date for the metrics (YYYY-MM-DD)")
+    metrics: List[MetricInput] = Field(
         ..., min_length=1, description="List of metrics per variant"
     )
 
@@ -58,5 +59,5 @@ class MetricsResponse(BaseModel):
     """Schema for metrics recording response."""
 
     message: str
-    date: date
+    date: date_type
     variants_updated: int

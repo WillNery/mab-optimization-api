@@ -2,10 +2,11 @@
 -- Multi-Armed Bandit API - Tables (Production Ready)
 -- ============================================
 -- Melhorias implementadas:
--- 1. BIGINT para impressions/clicks (suporta bilhões)
--- 2. Clustering key para particionamento eficiente
--- 3. Colunas de observabilidade (source, batch_id)
--- 4. Política de retenção para raw_metrics
+-- 1. BIGINT para impressions/clicks/sessions (suporta bilhões)
+-- 2. DECIMAL para revenue (precisão monetária)
+-- 3. Clustering key para particionamento eficiente
+-- 4. Colunas de observabilidade (source, batch_id)
+-- 5. Política de retenção para raw_metrics
 -- ============================================
 
 USE DATABASE activeview_mab;
@@ -19,6 +20,7 @@ CREATE OR REPLACE TABLE experiments (
     name VARCHAR(255) NOT NULL,
     description TEXT,
     status VARCHAR(20) DEFAULT 'active',
+    optimization_target VARCHAR(20) DEFAULT 'ctr',  -- 'ctr', 'rps', 'rpm'
     created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
     updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
     CONSTRAINT uq_experiment_name UNIQUE (name)
@@ -41,18 +43,18 @@ CREATE OR REPLACE TABLE variants (
 
 -- ============================================
 -- Raw Metrics table (append-only, auditoria)
--- Melhorias:
---   - BIGINT para suportar volumes altos
---   - source: origem dos dados (gam, cdp, manual)
---   - batch_id: ID do job/ingestão para rastreamento
---   - Clustering por data para queries de auditoria
 -- ============================================
 CREATE OR REPLACE TABLE raw_metrics (
     id VARCHAR(36) PRIMARY KEY,
     variant_id VARCHAR(36) NOT NULL,
     metric_date DATE NOT NULL,
+    -- Métricas de volume
+    sessions BIGINT NOT NULL DEFAULT 0,
     impressions BIGINT NOT NULL,
     clicks BIGINT NOT NULL,
+    -- Métricas de receita
+    revenue DECIMAL(18,6) NOT NULL DEFAULT 0,
+    -- Timestamps
     received_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
     -- Observabilidade
     source VARCHAR(50) DEFAULT 'api',
@@ -64,17 +66,18 @@ CLUSTER BY (metric_date);
 
 -- ============================================
 -- Daily Metrics table (dados limpos para algoritmo)
--- Melhorias:
---   - BIGINT para suportar volumes altos
---   - Clustering por variant_id e metric_date
---     (otimiza a query principal do Thompson Sampling)
 -- ============================================
 CREATE OR REPLACE TABLE daily_metrics (
     id VARCHAR(36) PRIMARY KEY,
     variant_id VARCHAR(36) NOT NULL,
     metric_date DATE NOT NULL,
+    -- Métricas de volume
+    sessions BIGINT NOT NULL DEFAULT 0,
     impressions BIGINT NOT NULL DEFAULT 0,
     clicks BIGINT NOT NULL DEFAULT 0,
+    -- Métricas de receita
+    revenue DECIMAL(18,6) NOT NULL DEFAULT 0,
+    -- Timestamps
     created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
     updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
     CONSTRAINT fk_daily_metrics_variant 
@@ -85,27 +88,50 @@ CREATE OR REPLACE TABLE daily_metrics (
 CLUSTER BY (variant_id, metric_date);
 
 -- ============================================
+-- View para métricas com retenção (últimos 120 dias)
+-- ============================================
+CREATE OR REPLACE VIEW raw_metrics_recent AS
+SELECT *
+FROM raw_metrics
+WHERE received_at >= DATEADD(day, -120, CURRENT_DATE());
+
+-- ============================================
+-- View para métricas calculadas
+-- Útil para dashboards e análises
+-- ============================================
+CREATE OR REPLACE VIEW daily_metrics_calculated AS
+SELECT 
+    m.*,
+    v.name AS variant_name,
+    v.is_control,
+    e.name AS experiment_name,
+    e.optimization_target,
+    -- CTR (Click-Through Rate)
+    CASE WHEN impressions > 0 THEN CAST(clicks AS FLOAT) / impressions ELSE 0 END AS ctr,
+    -- RPS (Revenue Per Session)
+    CASE WHEN sessions > 0 THEN revenue / sessions ELSE 0 END AS rps,
+    -- RPM (Revenue Per Mille - receita por 1000 impressões)
+    CASE WHEN impressions > 0 THEN (revenue / impressions) * 1000 ELSE 0 END AS rpm
+FROM daily_metrics m
+JOIN variants v ON v.id = m.variant_id
+JOIN experiments e ON e.id = v.experiment_id;
+
+-- ============================================
 -- Política de Retenção para raw_metrics
 -- Move dados > 120 dias para cold storage
 -- ============================================
 
--- Criar stage para cold storage (S3)
--- Nota: Ajuste a URL e credenciais conforme seu ambiente
 /*
 CREATE OR REPLACE STAGE raw_metrics_archive
     URL = 's3://activeview-data-archive/raw_metrics/'
     CREDENTIALS = (AWS_KEY_ID = '...' AWS_SECRET_KEY = '...')
     FILE_FORMAT = (TYPE = PARQUET);
-*/
 
--- Task para arquivar dados antigos (roda diariamente)
-/*
 CREATE OR REPLACE TASK archive_old_raw_metrics
     WAREHOUSE = compute_wh
-    SCHEDULE = 'USING CRON 0 2 * * * UTC'  -- 2 AM UTC diariamente
+    SCHEDULE = 'USING CRON 0 2 * * * UTC'
 AS
 BEGIN
-    -- Copiar dados antigos para S3
     COPY INTO @raw_metrics_archive
     FROM (
         SELECT * FROM raw_metrics 
@@ -115,21 +141,20 @@ BEGIN
     FILE_FORMAT = (TYPE = PARQUET)
     OVERWRITE = FALSE;
     
-    -- Deletar dados arquivados
     DELETE FROM raw_metrics 
     WHERE received_at < DATEADD(day, -120, CURRENT_DATE());
 END;
 
--- Ativar a task
 ALTER TASK archive_old_raw_metrics RESUME;
 */
 
 -- ============================================
--- Grants (permissões de acessos as tabelas)
+-- Grants (ajuste conforme sua estrutura de roles)
 -- ============================================
 /*
 GRANT SELECT, INSERT ON experiments TO ROLE mab_api_role;
 GRANT SELECT, INSERT ON variants TO ROLE mab_api_role;
 GRANT SELECT, INSERT, DELETE ON raw_metrics TO ROLE mab_api_role;
 GRANT SELECT, INSERT, UPDATE ON daily_metrics TO ROLE mab_api_role;
+GRANT SELECT ON daily_metrics_calculated TO ROLE mab_api_role;
 */

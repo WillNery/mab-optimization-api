@@ -7,6 +7,16 @@ import pandas as pd
 import altair as alt
 from datetime import datetime, timedelta
 
+# ===========================================
+# Configurações do Algoritmo (consistente com API)
+# ===========================================
+PRIOR_ALPHA = 1
+PRIOR_BETA = 99
+MIN_IMPRESSIONS = 200
+DEFAULT_WINDOW_DAYS = 14
+MAX_WINDOW_DAYS = 30
+THOMPSON_SAMPLES = 10000
+
 # Configuração da página
 st.set_page_config(
     page_title="MAB Dashboard",
@@ -55,7 +65,7 @@ def get_daily_metrics(experiment_id: str, days: int = 30):
             m.impressions,
             m.clicks,
             CASE 
-                WHEN m.impressions > 0 THEN (m.clicks / m.impressions) * 100
+                WHEN m.impressions > 0 THEN (CAST(m.clicks AS FLOAT) / m.impressions) * 100
                 ELSE 0 
             END AS ctr
         FROM activeview_mab.experiments.daily_metrics m
@@ -91,11 +101,9 @@ def get_allocation_data(experiment_id: str, window_days: int = 14):
             impressions,
             clicks,
             CASE 
-                WHEN impressions > 0 THEN (clicks / impressions) * 100
+                WHEN impressions > 0 THEN (CAST(clicks AS FLOAT) / impressions) * 100
                 ELSE 0 
-            END AS ctr,
-            clicks + 1 AS beta_alpha,
-            impressions - clicks + 1 AS beta_beta
+            END AS ctr
         FROM aggregated
         ORDER BY is_control DESC, variant_name
     """
@@ -120,25 +128,58 @@ def get_experiment_summary(experiment_id: str):
 
 
 # ===========================================
-# Funções de Cálculo
+# Funções de Cálculo (consistente com API)
 # ===========================================
 
-def calculate_thompson_allocation(df: pd.DataFrame, n_samples: int = 10000) -> pd.DataFrame:
-    """Calcula alocação usando Thompson Sampling."""
+def compute_beta_params(clicks: int, impressions: int, use_fallback: bool = False) -> tuple:
+    """
+    Calcula parâmetros Beta usando Bayesian update.
+    
+    Prior: Beta(1, 99) → CTR esperado ~1%
+    Posterior: Beta(α₀ + clicks, β₀ + impressions - clicks)
+    """
+    if use_fallback or impressions < MIN_IMPRESSIONS:
+        return PRIOR_ALPHA, PRIOR_BETA, True
+    
+    alpha = PRIOR_ALPHA + clicks
+    beta = PRIOR_BETA + impressions - clicks
+    return alpha, beta, False
+
+
+def calculate_thompson_allocation(df: pd.DataFrame, n_samples: int = THOMPSON_SAMPLES) -> pd.DataFrame:
+    """
+    Calcula alocação usando Thompson Sampling.
+    
+    Consistente com a API:
+    - Prior: Beta(1, 99)
+    - Min impressions: 200
+    - Fallback para prior se dados insuficientes
+    """
     import numpy as np
     
     if df.empty:
         return df
+    
+    # Calcular parâmetros Beta para cada variante
+    beta_params = []
+    for _, row in df.iterrows():
+        impressions = int(row['IMPRESSIONS'])
+        clicks = int(row['CLICKS'])
+        alpha, beta, is_fallback = compute_beta_params(clicks, impressions)
+        beta_params.append({
+            'variant': row['VARIANT_NAME'],
+            'alpha': alpha,
+            'beta': beta,
+            'is_fallback': is_fallback
+        })
     
     # Simular Thompson Sampling
     wins = {row['VARIANT_NAME']: 0 for _, row in df.iterrows()}
     
     for _ in range(n_samples):
         samples = {}
-        for _, row in df.iterrows():
-            alpha = int(row['BETA_ALPHA'])
-            beta = int(row['BETA_BETA'])
-            samples[row['VARIANT_NAME']] = np.random.beta(alpha, beta)
+        for param in beta_params:
+            samples[param['variant']] = np.random.beta(param['alpha'], param['beta'])
         
         winner = max(samples, key=samples.get)
         wins[winner] += 1
@@ -149,7 +190,34 @@ def calculate_thompson_allocation(df: pd.DataFrame, n_samples: int = 10000) -> p
     # Calcular probabilidade de ser o melhor
     df['prob_best'] = df['allocation']
     
+    # Adicionar flag de fallback
+    fallback_map = {p['variant']: p['is_fallback'] for p in beta_params}
+    df['is_fallback'] = df['VARIANT_NAME'].map(fallback_map)
+    
     return df
+
+
+def get_allocation_with_window_expansion(experiment_id: str) -> tuple:
+    """
+    Busca dados com expansão automática de janela.
+    
+    1. Tenta com 14 dias
+    2. Se alguma variante tem < 200 impressões, expande para 30 dias
+    3. Retorna dados e janela utilizada
+    """
+    # Tentar com janela padrão
+    df = get_allocation_data(experiment_id, DEFAULT_WINDOW_DAYS)
+    window_used = DEFAULT_WINDOW_DAYS
+    
+    # Verificar se precisa expandir
+    if not df.empty:
+        min_impressions = df['IMPRESSIONS'].min()
+        if min_impressions < MIN_IMPRESSIONS:
+            # Expandir para janela máxima
+            df = get_allocation_data(experiment_id, MAX_WINDOW_DAYS)
+            window_used = MAX_WINDOW_DAYS
+    
+    return df, window_used
 
 
 # ===========================================
@@ -176,8 +244,15 @@ selected_experiment_name = st.sidebar.selectbox(
 selected_experiment_id = experiment_options[selected_experiment_name]
 
 # Configurações adicionais
-window_days = st.sidebar.slider("Janela de análise (dias)", 7, 30, 14)
 chart_days = st.sidebar.slider("Dias no gráfico", 7, 90, 30)
+
+# Mostrar configurações do algoritmo
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Parâmetros do Algoritmo:**")
+st.sidebar.markdown(f"- Prior: Beta({PRIOR_ALPHA}, {PRIOR_BETA})")
+st.sidebar.markdown(f"- Min impressões: {MIN_IMPRESSIONS}")
+st.sidebar.markdown(f"- Janela: {DEFAULT_WINDOW_DAYS}d → {MAX_WINDOW_DAYS}d")
+st.sidebar.markdown(f"- Simulações: {THOMPSON_SAMPLES:,}")
 
 # ===========================================
 # Dados do Experimento
@@ -186,12 +261,14 @@ chart_days = st.sidebar.slider("Dias no gráfico", 7, 90, 30)
 # Carregar dados
 variants_df = get_variants(selected_experiment_id)
 metrics_df = get_daily_metrics(selected_experiment_id, chart_days)
-allocation_df = get_allocation_data(selected_experiment_id, window_days)
+allocation_df, window_used = get_allocation_with_window_expansion(selected_experiment_id)
 summary_df = get_experiment_summary(selected_experiment_id)
 
 # Calcular alocação
+used_fallback = False
 if not allocation_df.empty:
     allocation_df = calculate_thompson_allocation(allocation_df)
+    used_fallback = allocation_df['is_fallback'].any()
 
 # ===========================================
 # KPIs Principais
@@ -199,7 +276,7 @@ if not allocation_df.empty:
 
 st.header("📊 Resumo do Experimento")
 
-col1, col2, col3, col4 = st.columns(4)
+col1, col2, col3, col4, col5 = st.columns(5)
 
 if not summary_df.empty:
     summary = summary_df.iloc[0]
@@ -228,12 +305,22 @@ if not summary_df.empty:
             label="Dias com Dados",
             value=int(summary['DAYS_WITH_DATA']) if summary['DAYS_WITH_DATA'] else 0
         )
+    
+    with col5:
+        st.metric(
+            label="Janela Usada",
+            value=f"{window_used} dias"
+        )
 
 # ===========================================
 # Alocação Atual
 # ===========================================
 
 st.header("🎯 Alocação Recomendada")
+
+# Mostrar se usou fallback
+if used_fallback:
+    st.warning("⚠️ Algumas variantes têm menos de 200 impressões. Usando prior como fallback.")
 
 if not allocation_df.empty:
     col1, col2 = st.columns([2, 1])
@@ -254,15 +341,16 @@ if not allocation_df.empty:
     
     with col2:
         # Tabela de alocação
-        st.dataframe(
-            allocation_df[['VARIANT_NAME', 'CTR', 'allocation', 'prob_best']].rename(columns={
-                'VARIANT_NAME': 'Variante',
-                'CTR': 'CTR (%)',
-                'allocation': 'Alocação (%)',
-                'prob_best': 'Prob. Melhor (%)'
-            }),
-            hide_index=True
-        )
+        display_df = allocation_df[['VARIANT_NAME', 'CTR', 'allocation', 'prob_best', 'is_fallback']].copy()
+        display_df['is_fallback'] = display_df['is_fallback'].map({True: '⚠️', False: '✅'})
+        display_df = display_df.rename(columns={
+            'VARIANT_NAME': 'Variante',
+            'CTR': 'CTR (%)',
+            'allocation': 'Alocação (%)',
+            'prob_best': 'Prob. Melhor (%)',
+            'is_fallback': 'Dados'
+        })
+        st.dataframe(display_df, hide_index=True)
 else:
     st.info("Sem dados suficientes para calcular alocação.")
 
@@ -313,9 +401,10 @@ tab1, tab2 = st.tabs(["Por Variante", "Por Dia"])
 
 with tab1:
     if not allocation_df.empty:
-        detailed_df = allocation_df[['VARIANT_NAME', 'IS_CONTROL', 'IMPRESSIONS', 'CLICKS', 'CTR', 'allocation']].copy()
-        detailed_df.columns = ['Variante', 'Controle', 'Impressões', 'Clicks', 'CTR (%)', 'Alocação (%)']
+        detailed_df = allocation_df[['VARIANT_NAME', 'IS_CONTROL', 'IMPRESSIONS', 'CLICKS', 'CTR', 'allocation', 'is_fallback']].copy()
+        detailed_df.columns = ['Variante', 'Controle', 'Impressões', 'Clicks', 'CTR (%)', 'Alocação (%)', 'Usando Fallback']
         detailed_df['Controle'] = detailed_df['Controle'].map({True: '✅', False: '❌'})
+        detailed_df['Usando Fallback'] = detailed_df['Usando Fallback'].map({True: '⚠️ Sim', False: '✅ Não'})
         st.dataframe(detailed_df, hide_index=True, use_container_width=True)
 
 with tab2:
@@ -333,10 +422,10 @@ st.header("⚠️ Alertas")
 alerts = []
 
 if not allocation_df.empty:
-    # Alerta: variante com poucas impressões
+    # Alerta: variante com poucas impressões (usando MIN_IMPRESSIONS)
     for _, row in allocation_df.iterrows():
-        if row['IMPRESSIONS'] < 1000:
-            alerts.append(f"⚠️ **{row['VARIANT_NAME']}** tem poucas impressões ({int(row['IMPRESSIONS'])}). Resultados podem não ser confiáveis.")
+        if row['IMPRESSIONS'] < MIN_IMPRESSIONS:
+            alerts.append(f"⚠️ **{row['VARIANT_NAME']}** tem apenas {int(row['IMPRESSIONS'])} impressões (mínimo: {MIN_IMPRESSIONS}). Usando fallback (prior).")
     
     # Alerta: variante dominante
     max_allocation = allocation_df['allocation'].max()
@@ -353,6 +442,10 @@ if not summary_df.empty:
         if days_since_data > 2:
             alerts.append(f"📅 Último dado recebido há **{days_since_data} dias**. Verifique a ingestão.")
 
+# Alerta: janela expandida
+if window_used > DEFAULT_WINDOW_DAYS:
+    alerts.append(f"📊 Janela expandida de {DEFAULT_WINDOW_DAYS} para {window_used} dias devido a dados insuficientes.")
+
 if alerts:
     for alert in alerts:
         st.markdown(alert)
@@ -364,9 +457,10 @@ else:
 # ===========================================
 
 st.markdown("---")
+algorithm_status = "Thompson Sampling (fallback)" if used_fallback else "Thompson Sampling"
 st.markdown(
     f"*Última atualização: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}* | "
-    f"*Janela de análise: {window_days} dias* | "
-    f"*Algoritmo: Thompson Sampling*"
+    f"*Janela: {window_used} dias* | "
+    f"*Algoritmo: {algorithm_status}* | "
+    f"*Prior: Beta({PRIOR_ALPHA}, {PRIOR_BETA})*"
 )
-

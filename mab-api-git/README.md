@@ -26,18 +26,36 @@ Esta API recebe dados de experimentos A/B (impressões e clicks por variante), p
 - **Documentação**: Swagger UI automático
 
 ## Arquitetura
+```mermaid
+flowchart TD
+    subgraph Coleta["Camada de Coleta"]
+        U[Usuário] -->|page view| CDP[CDP]
+        CDP -->|gera session_id| HASH[hash session_id]
+        HASH -->|atribui variante| VAR[Variante A/B/N]
+        VAR -->|impression/click| AGG[Agregação Diária]
+    end
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  GAM / CDP  │────▶│   FastAPI   │────▶│  Snowflake  │
-│  (fontes)   │     │   (API)     │     │   (dados)   │
-└─────────────┘     └──────┬──────┘     └─────────────┘
-                          │
-                          ▼
-                   ┌─────────────┐
-                   │  Thompson   │
-                   │  Sampling   │
-                   └─────────────┘
+    subgraph API["Camada de API - FastAPI"]
+        AGG -->|POST /metrics| INGEST[Ingestão]
+        INGEST --> RAW[raw_metrics]
+        INGEST --> DAILY[daily_metrics]
+        ALLOC[GET /allocation] --> TS
+    end
+
+    subgraph Storage["Camada de Dados - Snowflake"]
+        RAW[(raw_metrics\naudit)]
+        DAILY[(daily_metrics\nclean)]
+    end
+
+    subgraph Algorithm["Camada de Algoritmo"]
+        DAILY --> TS[Thompson Sampling]
+        TS -->|"janela: 14d → 30d\nprior: Beta 1,99\nmin: 200 imp"| RESULT[Alocação %]
+    end
+
+    subgraph Apply["Camada de Aplicação"]
+        RESULT --> ADS[Sistema de Ads]
+        ADS -->|aplica %| U
+    end
 ```
 
 ### Fluxo de Dados

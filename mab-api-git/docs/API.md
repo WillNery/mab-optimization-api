@@ -95,8 +95,8 @@ Cria um novo experimento com suas variantes.
 | Target | Métrica | Fórmula | Uso |
 |--------|---------|---------|-----|
 | `ctr` | Click-Through Rate | clicks / impressions | Maximizar engajamento |
-| `rps` | Revenue Per Session | revenue / sessions | Maximizar receita por usuário |
-| `rpm` | Revenue Per Mille | (revenue / impressions) × 1000 | Maximizar receita por inventário |
+| `rps` | Revenue Per Session | revenue / sessions | Maximizar receita por sessão |
+| `rpm` | Revenue Per Mille | (revenue / impressions) × 1000 | Maximizar receita por mil impressões |
 
 **Validações:**
 - Deve ter pelo menos 1 variante com `is_control: true`

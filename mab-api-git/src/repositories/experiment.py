@@ -15,6 +15,7 @@ class ExperimentRepository:
     def create_experiment(
         name: str,
         description: Optional[str],
+        optimization_target: str,
         variants: list[dict],
     ) -> dict:
         """
@@ -23,6 +24,7 @@ class ExperimentRepository:
         Args:
             name: Experiment name
             description: Experiment description
+            optimization_target: Metric to optimize (ctr, rps, rpm)
             variants: List of variant dicts with 'name' and 'is_control'
             
         Returns:
@@ -42,6 +44,7 @@ class ExperimentRepository:
                         "name": name,
                         "description": description,
                         "status": "active",
+                        "optimization_target": optimization_target,
                     },
                 )
 
@@ -72,6 +75,7 @@ class ExperimentRepository:
                     "name": name,
                     "description": description,
                     "status": "active",
+                    "optimization_target": optimization_target,
                     "variants": created_variants,
                     "created_at": now,
                     "updated_at": now,

@@ -1,6 +1,7 @@
 """Pydantic models for metrics."""
 
 from datetime import date as date_type
+from decimal import Decimal
 from typing import List, Optional, Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -10,8 +11,10 @@ class MetricInput(BaseModel):
     """Schema for a single variant's metrics."""
 
     variant_name: str = Field(..., description="Name of the variant")
+    sessions: int = Field(default=0, ge=0, description="Number of unique sessions")
     impressions: int = Field(..., ge=0, description="Number of impressions")
     clicks: int = Field(..., ge=0, description="Number of clicks")
+    revenue: Decimal = Field(default=Decimal("0"), ge=0, description="Revenue in USD")
 
     @model_validator(mode="after")
     def validate_clicks_le_impressions(self) -> "MetricInput":
@@ -25,7 +28,13 @@ class MetricInput(BaseModel):
     model_config = {
         "json_schema_extra": {
             "examples": [
-                {"variant_name": "control", "impressions": 10000, "clicks": 320},
+                {
+                    "variant_name": "control",
+                    "sessions": 5000,
+                    "impressions": 10000,
+                    "clicks": 320,
+                    "revenue": 150.50
+                },
             ]
         }
     }
@@ -51,9 +60,20 @@ class MetricsBatchRequest(BaseModel):
                 {
                     "date": "2025-01-15",
                     "metrics": [
-                        {"variant_name": "control", "impressions": 10000, "clicks": 320},
-                        {"variant_name": "variant_a", "impressions": 10000, "clicks": 420},
-                        {"variant_name": "variant_b", "impressions": 10000, "clicks": 380},
+                        {
+                            "variant_name": "control",
+                            "sessions": 5000,
+                            "impressions": 10000,
+                            "clicks": 320,
+                            "revenue": 150.50
+                        },
+                        {
+                            "variant_name": "variant_a",
+                            "sessions": 5200,
+                            "impressions": 10000,
+                            "clicks": 420,
+                            "revenue": 185.75
+                        },
                     ],
                     "source": "gam",
                     "batch_id": "batch_20250115_001"

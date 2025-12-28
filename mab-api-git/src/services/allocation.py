@@ -15,6 +15,7 @@ from src.models.allocation import (
     AllocationResponse,
     VariantAllocation,
     VariantMetrics,
+    ConfidenceInterval,
 )
 
 
@@ -30,6 +31,8 @@ class VariantData:
     clicks: int
     revenue: Decimal
     ctr: float
+    ctr_ci_lower: float
+    ctr_ci_upper: float
     rps: float
     rpm: float
     # Thompson Sampling parameters
@@ -247,10 +250,12 @@ class AllocationService:
             clicks = int(m["clicks"])
             revenue = Decimal(str(m["revenue"]))
             
-            # Calculate derived metrics
-            ctr = clicks / impressions if impressions > 0 else 0.0
-            rps = float(revenue) / sessions if sessions > 0 else 0.0
-            rpm = (float(revenue) / impressions) * 1000 if impressions > 0 else 0.0
+            # Get metrics from SQL (already calculated)
+            ctr = float(m.get("ctr", 0))
+            rps = float(m.get("rps", 0))
+            rpm = float(m.get("rpm", 0))
+            ctr_ci_lower = float(m.get("ctr_ci_lower", 0))
+            ctr_ci_upper = float(m.get("ctr_ci_upper", 0))
             
             # Determine if using fallback
             if use_fallback or impressions < self.engine.min_impressions:
@@ -276,6 +281,8 @@ class AllocationService:
                     clicks=clicks,
                     revenue=revenue,
                     ctr=ctr,
+                    ctr_ci_lower=ctr_ci_lower,
+                    ctr_ci_upper=ctr_ci_upper,
                     rps=rps,
                     rpm=rpm,
                     alpha=alpha,
@@ -363,6 +370,10 @@ class AllocationService:
                         clicks=v.clicks,
                         revenue=v.revenue,
                         ctr=round(v.ctr, 6),
+                        ctr_ci=ConfidenceInterval(
+                            lower=round(v.ctr_ci_lower, 6),
+                            upper=round(v.ctr_ci_upper, 6),
+                        ),
                         rps=round(v.rps, 6),
                         rpm=round(v.rpm, 6),
                     ),

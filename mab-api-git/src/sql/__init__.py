@@ -101,6 +101,14 @@ class MetricsQueries:
                 AND m.metric_date < CURRENT_DATE()
             WHERE v.experiment_id = %(experiment_id)s
             GROUP BY v.id, v.name, v.is_control
+        ),
+        with_ctr AS (
+            SELECT 
+                *,
+                CASE WHEN impressions > 0 THEN CAST(clicks AS FLOAT) / impressions ELSE 0 END AS ctr,
+                CASE WHEN sessions > 0 THEN revenue / sessions ELSE 0 END AS rps,
+                CASE WHEN impressions > 0 THEN (revenue / impressions) * 1000 ELSE 0 END AS rpm
+            FROM aggregated
         )
         SELECT 
             variant_id,
@@ -110,31 +118,65 @@ class MetricsQueries:
             impressions,
             clicks,
             revenue,
-            -- CTR (Click-Through Rate)
-            CASE WHEN impressions > 0 THEN CAST(clicks AS FLOAT) / impressions ELSE 0 END AS ctr,
-            -- RPS (Revenue Per Session)
-            CASE WHEN sessions > 0 THEN revenue / sessions ELSE 0 END AS rps,
-            -- RPM (Revenue Per Mille)
-            CASE WHEN impressions > 0 THEN (revenue / impressions) * 1000 ELSE 0 END AS rpm
-        FROM aggregated
+            ctr,
+            rps,
+            rpm,
+            -- CTR Confidence Interval 95% (Wilson Score)
+            CASE 
+                WHEN impressions > 0 THEN
+                    (ctr + 1.92 / impressions - 1.96 * SQRT((ctr * (1 - ctr) + 0.96 / impressions) / impressions)) / (1 + 3.84 / impressions)
+                ELSE 0 
+            END AS ctr_ci_lower,
+            CASE 
+                WHEN impressions > 0 THEN
+                    (ctr + 1.92 / impressions + 1.96 * SQRT((ctr * (1 - ctr) + 0.96 / impressions) / impressions)) / (1 + 3.84 / impressions)
+                ELSE 0 
+            END AS ctr_ci_upper
+        FROM with_ctr
         ORDER BY is_control DESC, variant_name
     """
 
     SELECT_HISTORY = """
+        WITH with_ctr AS (
+            SELECT 
+                m.metric_date,
+                v.id AS variant_id,
+                v.name AS variant_name,
+                v.is_control,
+                m.sessions,
+                m.impressions,
+                m.clicks,
+                m.revenue,
+                CASE WHEN m.impressions > 0 THEN CAST(m.clicks AS FLOAT) / m.impressions ELSE 0 END AS ctr,
+                CASE WHEN m.sessions > 0 THEN m.revenue / m.sessions ELSE 0 END AS rps,
+                CASE WHEN m.impressions > 0 THEN (m.revenue / m.impressions) * 1000 ELSE 0 END AS rpm
+            FROM daily_metrics m
+            JOIN variants v ON v.id = m.variant_id
+            WHERE v.experiment_id = %(experiment_id)s
+        )
         SELECT 
-            m.metric_date,
-            v.id AS variant_id,
-            v.name AS variant_name,
-            v.is_control,
-            m.sessions,
-            m.impressions,
-            m.clicks,
-            m.revenue,
-            CASE WHEN m.impressions > 0 THEN CAST(m.clicks AS FLOAT) / m.impressions ELSE 0 END AS ctr,
-            CASE WHEN m.sessions > 0 THEN m.revenue / m.sessions ELSE 0 END AS rps,
-            CASE WHEN m.impressions > 0 THEN (m.revenue / m.impressions) * 1000 ELSE 0 END AS rpm
-        FROM daily_metrics m
-        JOIN variants v ON v.id = m.variant_id
-        WHERE v.experiment_id = %(experiment_id)s
-        ORDER BY m.metric_date DESC, v.is_control DESC, v.name
+            metric_date,
+            variant_id,
+            variant_name,
+            is_control,
+            sessions,
+            impressions,
+            clicks,
+            revenue,
+            ctr,
+            rps,
+            rpm,
+            -- CTR Confidence Interval 95% (Wilson Score)
+            CASE 
+                WHEN impressions > 0 THEN
+                    (ctr + 1.92 / impressions - 1.96 * SQRT((ctr * (1 - ctr) + 0.96 / impressions) / impressions)) / (1 + 3.84 / impressions)
+                ELSE 0 
+            END AS ctr_ci_lower,
+            CASE 
+                WHEN impressions > 0 THEN
+                    (ctr + 1.92 / impressions + 1.96 * SQRT((ctr * (1 - ctr) + 0.96 / impressions) / impressions)) / (1 + 3.84 / impressions)
+                ELSE 0 
+            END AS ctr_ci_upper
+        FROM with_ctr
+        ORDER BY metric_date DESC, is_control DESC, variant_name
     """

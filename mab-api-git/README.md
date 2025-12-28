@@ -76,7 +76,7 @@ Isso garante consistência durante a navegação sem depender de login.
 
 ## Algoritmo
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph Dados["1. Coleta"]
         D1["Impressões: 10.000"]
         D2["Clicks: 320"]
@@ -101,7 +101,9 @@ flowchart LR
         R3["Variant B: 30%"]
     end
 
-    Dados --> Beta --> MC --> Result
+    Dados --> Beta
+    Beta --> MC
+    MC --> Result
 ```
 
 ### Formulação

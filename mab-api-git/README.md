@@ -325,5 +325,11 @@ mab-api/
 ├── tests/
 │   ├── unit/
 │   └── integration/
+├── dashboard/
+│   └── streamlit_dashboard.py
+├── docs/
+│   ├── DATA_DICTIONARY.md
+│   └── ERD.md
+├── README.md
 └── pyproject.toml
 ```

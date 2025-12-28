@@ -13,6 +13,7 @@ erDiagram
         varchar_255 name UK
         text description
         varchar_20 status
+        varchar_20 optimization_target
         timestamp_ntz created_at
         timestamp_ntz updated_at
     }
@@ -29,8 +30,10 @@ erDiagram
         varchar_36 id PK
         varchar_36 variant_id FK
         date metric_date
+        bigint sessions
         bigint impressions
         bigint clicks
+        decimal_18_6 revenue
         timestamp_ntz received_at
         varchar_50 source
         varchar_36 batch_id
@@ -40,8 +43,10 @@ erDiagram
         varchar_36 id PK
         varchar_36 variant_id FK
         date metric_date
+        bigint sessions
         bigint impressions
         bigint clicks
+        decimal_18_6 revenue
         timestamp_ntz created_at
         timestamp_ntz updated_at
     }
@@ -100,6 +105,7 @@ erDiagram
                     │  name (UK)        │
                     │  description      │
                     │  status           │
+                    │  optimization_target  ← NEW
                     │  created_at       │
                     │  updated_at       │
                     └─────────┬─────────┘
@@ -125,8 +131,10 @@ erDiagram
 │  id (PK)              │       │  id (PK)              │
 │  variant_id (FK)      │       │  variant_id (FK)      │
 │  metric_date          │       │  metric_date          │
+│  sessions      ← NEW  │       │  sessions      ← NEW  │
 │  impressions (BIGINT) │       │  impressions (BIGINT) │
 │  clicks (BIGINT)      │       │  clicks (BIGINT)      │
+│  revenue       ← NEW  │       │  revenue       ← NEW  │
 │  received_at          │       │  created_at           │
 │  source               │       │  updated_at           │
 │  batch_id             │       │                       │
@@ -141,7 +149,11 @@ erDiagram
               │ GET /allocation   │
               │                   │
               │ Thompson Sampling │
-              │ (lê daily_metrics)│
+              │                   │
+              │ Otimiza:          │
+              │ - CTR (clicks/imp)│
+              │ - RPS (rev/sess)  │
+              │ - RPM (rev/imp)   │
               └───────────────────┘
 ```
 
@@ -151,7 +163,7 @@ erDiagram
 
 | Tabela | Escrita | Leitura | Propósito |
 |--------|---------|---------|-----------|
-| **experiments** | POST /experiments | GET /allocation | Cadastro do experimento |
+| **experiments** | POST /experiments | GET /allocation | Cadastro do experimento e target de otimização |
 | **variants** | POST /experiments | GET /allocation | Cadastro das variantes |
 | **raw_metrics** | POST /metrics | Auditoria/Debug | Backup append-only, rastreabilidade |
 | **daily_metrics** | POST /metrics | GET /allocation | Dados limpos para cálculo do algoritmo |
@@ -165,4 +177,19 @@ erDiagram
 | `source` | 'api', 'gam', 'cdp', 'manual' | Identifica origem dos dados |
 | `batch_id` | UUID ou identificador | Rastreia qual job/ingestão enviou os dados |
 
-Útil para debug quando dados vierem duplicados ou incorretos.
+---
+
+## Métricas e Targets de Otimização
+
+| Coluna | Usado para calcular |
+|--------|---------------------|
+| `sessions` | RPS (Revenue Per Session) |
+| `impressions` | CTR, RPM |
+| `clicks` | CTR |
+| `revenue` | RPS, RPM |
+
+| Target | Fórmula | Quando usar |
+|--------|---------|-------------|
+| `ctr` | clicks / impressions | Maximizar engajamento |
+| `rps` | revenue / sessions | Maximizar receita por usuário |
+| `rpm` | (revenue / impressions) × 1000 | Maximizar receita por inventário |

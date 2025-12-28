@@ -27,34 +27,35 @@ Esta API recebe dados de experimentos A/B (impressões e clicks por variante), p
 
 ## Arquitetura
 ```mermaid
-flowchart TB
-    subgraph Dados["1. Coleta"]
-        D1["Impressões: 10.000"]
-        D2["Clicks: 320"]
+flowchart TD
+    subgraph Coleta["Camada de Coleta"]
+        U[Usuário] -->|page view| CDP[CDP]
+        CDP -->|gera session_id| HASH[hash session_id]
+        HASH -->|atribui variante| VAR[Variante A/B/N]
+        VAR -->|impression/click| AGG[Agregação Diária]
     end
 
-    subgraph Beta["2. Atualização Beta"]
-        B1["α = 1 + 320 = 321"]
-        B2["β = 99 + 9.680 = 9.779"]
-        B3["Beta 321, 9779"]
-        B1 --> B3
-        B2 --> B3
+    subgraph API["Camada de API - FastAPI"]
+        AGG -->|POST /metrics| INGEST[Ingestão]
+        INGEST --> RAW[raw_metrics]
+        INGEST --> DAILY[daily_metrics]
+        ALLOC[GET /allocation] --> TS
     end
 
-    subgraph MC["3. Monte Carlo 10.000x"]
-        MC1["Sorteia CTR de cada variante"]
-        MC2["Conta quem venceu"]
+    subgraph Storage["Camada de Dados - Snowflake"]
+        RAW[(raw_metrics\naudit)]
+        DAILY[(daily_metrics\nclean)]
     end
 
-    subgraph Result["4. Alocação"]
-        R1["Control: 5%"]
-        R2["Variant A: 65%"]
-        R3["Variant B: 30%"]
+    subgraph Algorithm["Camada de Algoritmo"]
+        DAILY --> TS[Thompson Sampling]
+        TS -->|"janela: 14d → 30d\nprior: Beta 1,99\nmin: 200 imp"| RESULT[Alocação %]
     end
 
-    Dados --> Beta
-    Beta --> MC
-    MC --> Result
+    subgraph Apply["Camada de Aplicação"]
+        RESULT --> ADS[Sistema de Ads]
+        ADS -->|aplica %| U
+    end
 ```
 
 ### Fluxo de Dados

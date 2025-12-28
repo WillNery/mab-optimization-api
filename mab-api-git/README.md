@@ -75,6 +75,7 @@ Usuário acessa página → CDP gera session_id → Hash(session_id) % 100 → D
 Isso garante consistência durante a navegação sem depender de login.
 
 ## Algoritmo
+```mermaid
 flowchart LR
     subgraph Dados["1. Coleta"]
         D1["Impressões: 10.000"]
@@ -101,6 +102,7 @@ flowchart LR
     end
 
     Dados --> Beta --> MC --> Result
+```
 
 ### Formulação
 

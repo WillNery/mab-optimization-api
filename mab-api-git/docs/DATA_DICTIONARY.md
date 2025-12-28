@@ -223,8 +223,25 @@ WHERE received_at >= DATEADD(day, -120, CURRENT_DATE());
 | Métrica | Fórmula | Descrição |
 |---------|---------|-----------|
 | **CTR** | clicks / impressions | Taxa de cliques por impressão |
+| **CTR CI Lower** | Wilson Score (2.5%) | Limite inferior do intervalo de confiança 95% |
+| **CTR CI Upper** | Wilson Score (97.5%) | Limite superior do intervalo de confiança 95% |
 | **RPS** | revenue / sessions | Receita média por sessão |
 | **RPM** | (revenue / impressions) × 1000 | Receita por mil impressões |
+
+### Intervalo de Confiança do CTR (Wilson Score)
+
+As queries SQL calculam o intervalo de confiança 95% do CTR usando o método Wilson Score:
+
+```sql
+-- Wilson Score Interval (z = 1.96 para 95%)
+ctr_ci_lower = (ctr + 1.92/n - 1.96 * SQRT((ctr*(1-ctr) + 0.96/n) / n)) / (1 + 3.84/n)
+ctr_ci_upper = (ctr + 1.92/n + 1.96 * SQRT((ctr*(1-ctr) + 0.96/n) / n)) / (1 + 3.84/n)
+```
+
+**Por que Wilson Score?**
+- Mais preciso que Wald para proporções pequenas
+- Não produz intervalos negativos
+- Melhor cobertura para amostras pequenas
 
 ---
 
@@ -277,7 +294,7 @@ Se `daily_metrics` corromper, pode ser reconstruída a partir de `raw_metrics`.
 | v2 | 2025-01-15 | 5200 | 10000 | 380 | 185.75 |
 
 ### Métricas calculadas
-| variant | CTR | RPS | RPM |
-|---------|-----|-----|-----|
-| azul | 3.2% | $0.0301 | $15.05 |
-| verde | 3.8% | $0.0357 | $18.58 |
+| variant | CTR | CTR CI 95% | RPS | RPM |
+|---------|-----|------------|-----|-----|
+| azul | 3.2% | [2.87%, 3.56%] | $0.0301 | $15.05 |
+| verde | 3.8% | [3.44%, 4.19%] | $0.0357 | $18.58 |

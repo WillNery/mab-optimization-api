@@ -7,6 +7,13 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class ConfidenceInterval(BaseModel):
+    """95% confidence interval."""
+    
+    lower: float = Field(..., description="Lower bound (2.5 percentile)")
+    upper: float = Field(..., description="Upper bound (97.5 percentile)")
+
+
 class VariantMetrics(BaseModel):
     """Metrics for a single variant."""
 
@@ -15,6 +22,7 @@ class VariantMetrics(BaseModel):
     clicks: int = Field(..., description="Total clicks in the window")
     revenue: Decimal = Field(..., description="Total revenue in the window (USD)")
     ctr: float = Field(..., description="Click-through rate (clicks/impressions)")
+    ctr_ci: ConfidenceInterval = Field(..., description="95% confidence interval for CTR (Wilson Score)")
     rps: float = Field(..., description="Revenue per session (revenue/sessions)")
     rpm: float = Field(..., description="Revenue per mille (revenue/impressions * 1000)")
 
@@ -66,6 +74,10 @@ class AllocationResponse(BaseModel):
                                 "clicks": 4480,
                                 "revenue": 2100.50,
                                 "ctr": 0.032,
+                                "ctr_ci": {
+                                    "lower": 0.0311,
+                                    "upper": 0.0329
+                                },
                                 "rps": 0.030,
                                 "rpm": 15.00
                             },
@@ -80,6 +92,10 @@ class AllocationResponse(BaseModel):
                                 "clicks": 5880,
                                 "revenue": 2750.25,
                                 "ctr": 0.042,
+                                "ctr_ci": {
+                                    "lower": 0.0410,
+                                    "upper": 0.0430
+                                },
                                 "rps": 0.038,
                                 "rpm": 19.64
                             },

@@ -103,11 +103,9 @@ class MetricsQueries:
             impressions,
             clicks,
             CASE 
-                WHEN impressions > 0 THEN clicks / impressions 
+                WHEN impressions > 0 THEN CAST(clicks AS FLOAT) / impressions 
                 ELSE 0 
-            END AS ctr,
-            clicks + 1 AS beta_alpha,
-            impressions - clicks + 1 AS beta_beta
+            END AS ctr
         FROM aggregated
         ORDER BY is_control DESC, variant_name
     """

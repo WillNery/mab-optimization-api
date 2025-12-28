@@ -61,6 +61,7 @@ Cria um novo experimento com suas variantes.
 {
   "name": "homepage_cta_test",
   "description": "Teste de cores do botão CTA na homepage",
+  "optimization_target": "rpm",
   "variants": [
     {
       "name": "control",
@@ -80,13 +81,22 @@ Cria um novo experimento com suas variantes.
 
 **Parâmetros:**
 
-| Campo | Tipo | Obrigatório | Descrição |
-|-------|------|-------------|-----------|
-| `name` | string | Sim | Nome único do experimento |
-| `description` | string | Não | Descrição do experimento |
-| `variants` | array | Sim | Lista de variantes (mínimo 2) |
-| `variants[].name` | string | Sim | Nome da variante |
-| `variants[].is_control` | boolean | Sim | Se é a variante de controle |
+| Campo | Tipo | Obrigatório | Default | Descrição |
+|-------|------|-------------|---------|-----------|
+| `name` | string | Sim | - | Nome único do experimento |
+| `description` | string | Não | null | Descrição do experimento |
+| `optimization_target` | string | Não | "ctr" | Métrica a otimizar: `ctr`, `rps`, `rpm` |
+| `variants` | array | Sim | - | Lista de variantes (mínimo 2) |
+| `variants[].name` | string | Sim | - | Nome da variante |
+| `variants[].is_control` | boolean | Sim | - | Se é a variante de controle |
+
+**Optimization Targets:**
+
+| Target | Métrica | Fórmula | Uso |
+|--------|---------|---------|-----|
+| `ctr` | Click-Through Rate | clicks / impressions | Maximizar engajamento |
+| `rps` | Revenue Per Session | revenue / sessions | Maximizar receita por usuário |
+| `rpm` | Revenue Per Mille | (revenue / impressions) × 1000 | Maximizar receita por inventário |
 
 **Validações:**
 - Deve ter pelo menos 1 variante com `is_control: true`
@@ -101,6 +111,7 @@ Cria um novo experimento com suas variantes.
   "name": "homepage_cta_test",
   "description": "Teste de cores do botão CTA na homepage",
   "status": "active",
+  "optimization_target": "rpm",
   "variants": [
     {
       "id": "194890c6-7b14-4431-8ed9-3d4dbd44262c",
@@ -165,6 +176,7 @@ Busca detalhes de um experimento.
   "name": "homepage_cta_test",
   "description": "Teste de cores do botão CTA na homepage",
   "status": "active",
+  "optimization_target": "rpm",
   "variants": [
     {
       "id": "194890c6-7b14-4431-8ed9-3d4dbd44262c",
@@ -197,7 +209,7 @@ Busca detalhes de um experimento.
 
 ### `POST /experiments/{experiment_id}/metrics`
 
-Registra métricas diárias de impressões e clicks por variante.
+Registra métricas diárias de sessões, impressões, clicks e receita por variante.
 
 **Path Parameters:**
 
@@ -212,18 +224,24 @@ Registra métricas diárias de impressões e clicks por variante.
   "metrics": [
     {
       "variant_name": "control",
+      "sessions": 5000,
       "impressions": 10000,
-      "clicks": 320
+      "clicks": 320,
+      "revenue": 150.50
     },
     {
       "variant_name": "variant_a",
+      "sessions": 5200,
       "impressions": 10000,
-      "clicks": 450
+      "clicks": 420,
+      "revenue": 185.75
     },
     {
       "variant_name": "variant_b",
+      "sessions": 4800,
       "impressions": 10000,
-      "clicks": 380
+      "clicks": 380,
+      "revenue": 165.25
     }
   ],
   "source": "gam",
@@ -233,20 +251,23 @@ Registra métricas diárias de impressões e clicks por variante.
 
 **Parâmetros:**
 
-| Campo | Tipo | Obrigatório | Descrição |
-|-------|------|-------------|-----------|
-| `date` | string (YYYY-MM-DD) | Sim | Data das métricas |
-| `metrics` | array | Sim | Lista de métricas por variante |
-| `metrics[].variant_name` | string | Sim | Nome da variante |
-| `metrics[].impressions` | integer | Sim | Número de impressões (≥ 0) |
-| `metrics[].clicks` | integer | Sim | Número de clicks (≥ 0) |
-| `source` | string | Não | Origem dos dados: `api`, `gam`, `cdp`, `manual` (default: `api`) |
-| `batch_id` | string | Não | ID do batch para rastreabilidade |
+| Campo | Tipo | Obrigatório | Default | Descrição |
+|-------|------|-------------|---------|-----------|
+| `date` | string (YYYY-MM-DD) | Sim | - | Data das métricas |
+| `metrics` | array | Sim | - | Lista de métricas por variante |
+| `metrics[].variant_name` | string | Sim | - | Nome da variante |
+| `metrics[].sessions` | integer | Não | 0 | Número de sessões únicas |
+| `metrics[].impressions` | integer | Sim | - | Número de impressões (≥ 0) |
+| `metrics[].clicks` | integer | Sim | - | Número de clicks (≥ 0) |
+| `metrics[].revenue` | decimal | Não | 0 | Receita em USD |
+| `source` | string | Não | "api" | Origem: `api`, `gam`, `cdp`, `manual` |
+| `batch_id` | string | Não | null | ID do batch para rastreabilidade |
 
 **Validações:**
 - `clicks` não pode ser maior que `impressions`
 - `variant_name` deve existir no experimento
 - `impressions` e `clicks` devem ser ≥ 0
+- `revenue` deve ser ≥ 0
 
 **Response 201 (Created):**
 ```json
@@ -303,9 +324,9 @@ Retorna a alocação de tráfego otimizada usando Thompson Sampling.
 1. Busca métricas dos últimos `window_days` dias
 2. Se alguma variante tem < 200 impressões, expande para 30 dias
 3. Se ainda insuficiente, usa fallback (prior only)
-4. Calcula posterior Beta para cada variante:
-   - `α = 1 + clicks`
-   - `β = 99 + impressions - clicks`
+4. Calcula alocação baseado no `optimization_target` do experimento:
+   - **CTR**: Beta(α₀ + clicks, β₀ + impressions - clicks)
+   - **RPS/RPM**: Normal distribution com média e variância empíricas
 5. Roda 10.000 simulações Monte Carlo
 6. Retorna % de vezes que cada variante "venceu"
 
@@ -315,37 +336,36 @@ Retorna a alocação de tráfego otimizada usando Thompson Sampling.
   "experiment_id": "5d7e7894-f937-4b43-93a7-140adf619b32",
   "experiment_name": "homepage_cta_test",
   "computed_at": "2025-01-16T00:00:00Z",
-  "algorithm": "thompson_sampling",
+  "algorithm": "thompson_sampling (target: rpm)",
+  "optimization_target": "rpm",
   "window_days": 14,
   "allocations": [
     {
       "variant_name": "control",
       "is_control": true,
-      "allocation_percentage": 5.2,
+      "allocation_percentage": 15.2,
       "metrics": {
+        "sessions": 70000,
         "impressions": 140000,
         "clicks": 4480,
-        "ctr": 0.032
+        "revenue": 2100.50,
+        "ctr": 0.032,
+        "rps": 0.030,
+        "rpm": 15.00
       }
     },
     {
       "variant_name": "variant_a",
       "is_control": false,
-      "allocation_percentage": 65.3,
+      "allocation_percentage": 84.8,
       "metrics": {
+        "sessions": 72000,
         "impressions": 140000,
         "clicks": 5880,
-        "ctr": 0.042
-      }
-    },
-    {
-      "variant_name": "variant_b",
-      "is_control": false,
-      "allocation_percentage": 29.5,
-      "metrics": {
-        "impressions": 140000,
-        "clicks": 5320,
-        "ctr": 0.038
+        "revenue": 2750.25,
+        "ctr": 0.042,
+        "rps": 0.038,
+        "rpm": 19.64
       }
     }
   ]
@@ -354,10 +374,10 @@ Retorna a alocação de tráfego otimizada usando Thompson Sampling.
 
 **Response com Fallback:**
 
-Quando não há dados suficientes, o campo `algorithm` indica:
+Quando não há dados suficientes:
 ```json
 {
-  "algorithm": "thompson_sampling (fallback: prior only)",
+  "algorithm": "thompson_sampling (fallback: prior only, target: rpm)",
   "window_days": 30,
   ...
 }
@@ -386,30 +406,33 @@ Retorna histórico de métricas diárias.
 ```json
 {
   "experiment_id": "5d7e7894-f937-4b43-93a7-140adf619b32",
+  "experiment_name": "homepage_cta_test",
   "history": [
     {
-      "date": "2025-01-15",
+      "metric_date": "2025-01-15",
+      "variant_id": "194890c6-7b14-4431-8ed9-3d4dbd44262c",
       "variant_name": "control",
       "is_control": true,
+      "sessions": 5000,
       "impressions": 10000,
       "clicks": 320,
-      "ctr": 0.032
+      "revenue": 150.50,
+      "ctr": 0.032,
+      "rps": 0.0301,
+      "rpm": 15.05
     },
     {
-      "date": "2025-01-15",
+      "metric_date": "2025-01-15",
+      "variant_id": "5c730ac2-64a1-4820-b80c-92b52b20c823",
       "variant_name": "variant_a",
       "is_control": false,
+      "sessions": 5200,
       "impressions": 10000,
-      "clicks": 450,
-      "ctr": 0.045
-    },
-    {
-      "date": "2025-01-14",
-      "variant_name": "control",
-      "is_control": true,
-      "impressions": 9500,
-      "clicks": 285,
-      "ctr": 0.030
+      "clicks": 420,
+      "revenue": 185.75,
+      "ctr": 0.042,
+      "rps": 0.0357,
+      "rpm": 18.575
     }
   ]
 }
@@ -467,28 +490,41 @@ Retorna histórico de métricas diárias.
 
 ### cURL
 
-**Criar experimento:**
+**Criar experimento otimizando RPM:**
 ```bash
 curl -X POST http://localhost:8000/experiments \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "teste_botao",
+    "name": "teste_monetizacao",
+    "optimization_target": "rpm",
     "variants": [
-      {"name": "azul", "is_control": true},
-      {"name": "verde", "is_control": false}
+      {"name": "layout_atual", "is_control": true},
+      {"name": "layout_novo", "is_control": false}
     ]
   }'
 ```
 
-**Enviar métricas:**
+**Enviar métricas com receita:**
 ```bash
 curl -X POST http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619b32/metrics \
   -H "Content-Type: application/json" \
   -d '{
     "date": "2025-01-15",
     "metrics": [
-      {"variant_name": "azul", "impressions": 1000, "clicks": 30},
-      {"variant_name": "verde", "impressions": 1000, "clicks": 45}
+      {
+        "variant_name": "layout_atual",
+        "sessions": 5000,
+        "impressions": 10000,
+        "clicks": 320,
+        "revenue": 150.50
+      },
+      {
+        "variant_name": "layout_novo",
+        "sessions": 5200,
+        "impressions": 10000,
+        "clicks": 380,
+        "revenue": 195.75
+      }
     ],
     "source": "gam"
   }'
@@ -499,11 +535,6 @@ curl -X POST http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619
 curl http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619b32/allocation
 ```
 
-**Obter alocação com janela customizada:**
-```bash
-curl "http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619b32/allocation?window_days=7"
-```
-
 ### Python
 
 ```python
@@ -511,9 +542,10 @@ import requests
 
 BASE_URL = "http://localhost:8000"
 
-# Criar experimento
+# Criar experimento otimizando receita por sessão
 response = requests.post(f"{BASE_URL}/experiments", json={
-    "name": "teste_python",
+    "name": "teste_rps",
+    "optimization_target": "rps",
     "variants": [
         {"name": "control", "is_control": True},
         {"name": "treatment", "is_control": False}
@@ -522,12 +554,24 @@ response = requests.post(f"{BASE_URL}/experiments", json={
 experiment = response.json()
 experiment_id = experiment["id"]
 
-# Enviar métricas
+# Enviar métricas com sessões e receita
 requests.post(f"{BASE_URL}/experiments/{experiment_id}/metrics", json={
     "date": "2025-01-15",
     "metrics": [
-        {"variant_name": "control", "impressions": 1000, "clicks": 30},
-        {"variant_name": "treatment", "impressions": 1000, "clicks": 50}
+        {
+            "variant_name": "control",
+            "sessions": 5000,
+            "impressions": 10000,
+            "clicks": 300,
+            "revenue": 125.00
+        },
+        {
+            "variant_name": "treatment",
+            "sessions": 5100,
+            "impressions": 10000,
+            "clicks": 320,
+            "revenue": 175.50
+        }
     ]
 })
 
@@ -535,8 +579,11 @@ requests.post(f"{BASE_URL}/experiments/{experiment_id}/metrics", json={
 response = requests.get(f"{BASE_URL}/experiments/{experiment_id}/allocation")
 allocation = response.json()
 
+print(f"Otimizando: {allocation['optimization_target']}")
 for variant in allocation["allocations"]:
     print(f"{variant['variant_name']}: {variant['allocation_percentage']}%")
+    print(f"  RPM: ${variant['metrics']['rpm']:.2f}")
+    print(f"  RPS: ${variant['metrics']['rps']:.4f}")
 ```
 
 ---
@@ -564,10 +611,20 @@ MAX_WINDOW_DAYS=30
 MIN_IMPRESSIONS=200
 THOMPSON_SAMPLES=10000
 
-# Prior (Beta distribution)
+# Prior (Beta distribution para CTR)
 PRIOR_ALPHA=1
 PRIOR_BETA=99
 ```
+
+---
+
+## Métricas Calculadas
+
+| Métrica | Fórmula | Descrição |
+|---------|---------|-----------|
+| CTR | clicks ÷ impressions | Taxa de cliques |
+| RPS | revenue ÷ sessions | Receita por sessão |
+| RPM | (revenue ÷ impressions) × 1000 | Receita por mil impressões |
 
 ---
 

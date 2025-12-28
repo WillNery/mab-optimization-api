@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Optional, Literal
 
 import numpy as np
@@ -24,30 +25,30 @@ class VariantData:
     variant_id: str
     variant_name: str
     is_control: bool
+    sessions: int
     impressions: int
     clicks: int
+    revenue: Decimal
     ctr: float
-    beta_alpha: int
-    beta_beta: int
-    data_source: Literal["observed", "fallback"]  # Indica se usou dados ou prior
+    rps: float
+    rpm: float
+    # Thompson Sampling parameters
+    alpha: float
+    beta: float
+    data_source: Literal["observed", "fallback"]
 
 
 class ThompsonSamplingEngine:
     """
-    Thompson Sampling implementation for CTR optimization.
+    Thompson Sampling implementation for metric optimization.
     
-    Uses Beta-Bernoulli conjugate model:
-    - Prior: Beta(α₀, β₀) where α₀=1, β₀=99 (expected CTR ~1%)
-    - Likelihood: Bernoulli (click or no click)
-    - Posterior: Beta(α₀ + clicks, β₀ + impressions - clicks)
+    Supports multiple optimization targets:
+    - CTR (Click-Through Rate): clicks / impressions
+    - RPS (Revenue Per Session): revenue / sessions
+    - RPM (Revenue Per Mille): revenue / impressions * 1000
     
-    Features:
-    - Informative prior for cold start (not uniform)
-    - Minimum impressions threshold for statistical reliability
-    - Automatic window expansion when data is insufficient
-    
-    Allocation is determined by simulating many draws from each variant's
-    posterior and counting how often each variant has the highest sampled CTR.
+    For CTR: Uses Beta-Bernoulli conjugate model
+    For RPS/RPM: Uses Normal approximation with empirical mean/variance
     """
 
     def __init__(
@@ -61,9 +62,9 @@ class ThompsonSamplingEngine:
         Initialize the Thompson Sampling engine.
         
         Args:
-            n_samples: Number of Monte Carlo samples (default from settings)
-            prior_alpha: Alpha parameter for Beta prior (default from settings)
-            prior_beta: Beta parameter for Beta prior (default from settings)
+            n_samples: Number of Monte Carlo samples
+            prior_alpha: Alpha parameter for Beta prior (CTR)
+            prior_beta: Beta parameter for Beta prior (CTR)
             min_impressions: Minimum impressions for reliable estimation
         """
         self.n_samples = n_samples or settings.thompson_samples
@@ -71,35 +72,60 @@ class ThompsonSamplingEngine:
         self.prior_beta = prior_beta or settings.prior_beta
         self.min_impressions = min_impressions or settings.min_impressions
 
-    def compute_beta_params(self, clicks: int, impressions: int) -> tuple[int, int]:
+    def compute_beta_params_ctr(self, clicks: int, impressions: int) -> tuple[float, float]:
         """
-        Compute Beta distribution parameters using Bayesian update.
+        Compute Beta distribution parameters for CTR.
         
         Posterior = Prior × Likelihood
         Beta(α₀ + clicks, β₀ + impressions - clicks)
-        
-        Args:
-            clicks: Number of clicks observed
-            impressions: Number of impressions observed
-            
-        Returns:
-            Tuple of (alpha, beta) for the posterior distribution
         """
         alpha = self.prior_alpha + clicks
         beta = self.prior_beta + impressions - clicks
-        return alpha, beta
+        return float(alpha), float(beta)
 
-    def calculate_allocation(self, variants: list[VariantData]) -> dict[str, float]:
+    def compute_normal_params_revenue(
+        self, 
+        revenue: float, 
+        count: int,
+        prior_mean: float = 0.01,
+        prior_variance: float = 0.01,
+    ) -> tuple[float, float]:
+        """
+        Compute Normal distribution parameters for revenue metrics.
+        
+        Uses empirical mean and variance with prior.
+        
+        Args:
+            revenue: Total revenue
+            count: Number of sessions or impressions
+            prior_mean: Prior expected value
+            prior_variance: Prior variance
+            
+        Returns:
+            (mean, std) for Normal distribution
+        """
+        if count == 0:
+            return prior_mean, np.sqrt(prior_variance)
+        
+        observed_mean = revenue / count
+        # Use prior to stabilize variance estimation
+        # Bayesian update with conjugate prior
+        posterior_mean = (prior_mean + observed_mean * count) / (1 + count)
+        posterior_variance = prior_variance / (1 + count)
+        
+        return posterior_mean, np.sqrt(max(posterior_variance, 1e-10))
+
+    def calculate_allocation(
+        self, 
+        variants: list[VariantData],
+        optimization_target: Literal["ctr", "rps", "rpm"] = "ctr",
+    ) -> dict[str, float]:
         """
         Calculate traffic allocation using Thompson Sampling.
         
-        For each Monte Carlo simulation:
-        1. Sample θ from Beta(alpha, beta) for each variant
-        2. The variant with highest θ "wins"
-        3. Allocation = proportion of wins for each variant
-        
         Args:
-            variants: List of variant data with beta parameters
+            variants: List of variant data
+            optimization_target: Metric to optimize
             
         Returns:
             Dict mapping variant_name to allocation percentage
@@ -107,21 +133,16 @@ class ThompsonSamplingEngine:
         if not variants:
             return {}
 
-        # Sample from Beta distribution for each variant
-        samples = {
-            v.variant_name: stats.beta.rvs(
-                v.beta_alpha,
-                v.beta_beta,
-                size=self.n_samples,
-            )
-            for v in variants
-        }
+        # Sample from appropriate distribution based on optimization target
+        if optimization_target == "ctr":
+            samples = self._sample_ctr(variants)
+        else:
+            samples = self._sample_revenue(variants, optimization_target)
 
         # Count wins for each variant
         wins = {v.variant_name: 0 for v in variants}
         
         for i in range(self.n_samples):
-            # Find variant with highest sampled theta in this simulation
             best_variant = max(
                 variants,
                 key=lambda v: samples[v.variant_name][i],
@@ -134,14 +155,48 @@ class ThompsonSamplingEngine:
             for name, count in wins.items()
         }
 
-        # Ensure allocations sum to 100% (handle rounding)
+        # Ensure allocations sum to 100%
         total = sum(allocations.values())
         if total != 100.0:
-            # Adjust the largest allocation to make sum exactly 100
             max_variant = max(allocations, key=allocations.get)
             allocations[max_variant] += round(100.0 - total, 2)
 
         return allocations
+
+    def _sample_ctr(self, variants: list[VariantData]) -> dict[str, np.ndarray]:
+        """Sample from Beta distribution for CTR optimization."""
+        return {
+            v.variant_name: stats.beta.rvs(
+                v.alpha,
+                v.beta,
+                size=self.n_samples,
+            )
+            for v in variants
+        }
+
+    def _sample_revenue(
+        self, 
+        variants: list[VariantData],
+        metric: Literal["rps", "rpm"],
+    ) -> dict[str, np.ndarray]:
+        """Sample from Normal distribution for revenue optimization."""
+        samples = {}
+        
+        for v in variants:
+            if metric == "rps":
+                mean, std = self.compute_normal_params_revenue(
+                    float(v.revenue), v.sessions
+                )
+            else:  # rpm
+                mean, std = self.compute_normal_params_revenue(
+                    float(v.revenue) * 1000, v.impressions
+                )
+            
+            # Sample from Normal, clip to non-negative
+            raw_samples = stats.norm.rvs(mean, std, size=self.n_samples)
+            samples[v.variant_name] = np.clip(raw_samples, 0, None)
+        
+        return samples
 
 
 class AllocationService:
@@ -151,15 +206,7 @@ class AllocationService:
         self.engine = ThompsonSamplingEngine()
 
     def _has_sufficient_data(self, variants: list[VariantData]) -> bool:
-        """
-        Check if all variants have minimum required impressions.
-        
-        Args:
-            variants: List of variant data
-            
-        Returns:
-            True if all variants have >= min_impressions
-        """
+        """Check if all variants have minimum required impressions."""
         if not variants:
             return False
         return all(v.impressions >= self.engine.min_impressions for v in variants)
@@ -169,16 +216,7 @@ class AllocationService:
         experiment_id: str,
         window_days: int,
     ) -> list[dict]:
-        """
-        Get metrics for a specific window.
-        
-        Args:
-            experiment_id: Experiment UUID
-            window_days: Number of days to look back
-            
-        Returns:
-            List of metrics dicts from repository
-        """
+        """Get metrics for a specific window."""
         return MetricsRepository.get_metrics_for_allocation(
             experiment_id=experiment_id,
             window_days=window_days,
@@ -187,14 +225,16 @@ class AllocationService:
     def _convert_to_variant_data(
         self,
         metrics_data: list[dict],
+        optimization_target: str,
         use_fallback: bool = False,
     ) -> list[VariantData]:
         """
-        Convert raw metrics to VariantData objects with proper Beta parameters.
+        Convert raw metrics to VariantData objects.
         
         Args:
             metrics_data: Raw metrics from repository
-            use_fallback: If True, use only prior (ignore observed data)
+            optimization_target: Metric being optimized
+            use_fallback: If True, use only prior
             
         Returns:
             List of VariantData objects
@@ -202,32 +242,44 @@ class AllocationService:
         variants = []
         
         for m in metrics_data:
+            sessions = int(m["sessions"])
             impressions = int(m["impressions"])
             clicks = int(m["clicks"])
+            revenue = Decimal(str(m["revenue"]))
             
+            # Calculate derived metrics
+            ctr = clicks / impressions if impressions > 0 else 0.0
+            rps = float(revenue) / sessions if sessions > 0 else 0.0
+            rpm = (float(revenue) / impressions) * 1000 if impressions > 0 else 0.0
+            
+            # Determine if using fallback
             if use_fallback or impressions < self.engine.min_impressions:
-                # Use only prior (fallback mode)
-                alpha = self.engine.prior_alpha
-                beta = self.engine.prior_beta
                 data_source = "fallback"
-                # CTR is expected value of prior
-                ctr = alpha / (alpha + beta)
+                alpha = float(self.engine.prior_alpha)
+                beta = float(self.engine.prior_beta)
             else:
-                # Use observed data with prior (Bayesian update)
-                alpha, beta = self.engine.compute_beta_params(clicks, impressions)
                 data_source = "observed"
-                ctr = clicks / impressions if impressions > 0 else 0.0
+                if optimization_target == "ctr":
+                    alpha, beta = self.engine.compute_beta_params_ctr(clicks, impressions)
+                else:
+                    # For revenue metrics, alpha/beta are placeholders
+                    # Actual sampling uses Normal distribution
+                    alpha, beta = 1.0, 1.0
             
             variants.append(
                 VariantData(
                     variant_id=m["variant_id"],
                     variant_name=m["variant_name"],
                     is_control=m["is_control"],
+                    sessions=sessions,
                     impressions=impressions,
                     clicks=clicks,
+                    revenue=revenue,
                     ctr=ctr,
-                    beta_alpha=alpha,
-                    beta_beta=beta,
+                    rps=rps,
+                    rpm=rpm,
+                    alpha=alpha,
+                    beta=beta,
                     data_source=data_source,
                 )
             )
@@ -243,13 +295,15 @@ class AllocationService:
         Get optimized traffic allocation for an experiment.
         
         Logic:
-        1. Try with default window (14 days)
-        2. If any variant has < min_impressions, expand to max_window (30 days)
-        3. If still insufficient, use fallback (prior only)
+        1. Get experiment and its optimization target
+        2. Try with default window (14 days)
+        3. If insufficient data, expand to max_window (30 days)
+        4. If still insufficient, use fallback
+        5. Calculate allocation using appropriate metric
         
         Args:
             experiment_id: Experiment UUID
-            window_days: Number of days to look back (default: 14)
+            window_days: Number of days to look back
             
         Returns:
             Allocation response or None if experiment not found
@@ -262,9 +316,13 @@ class AllocationService:
         if not experiment:
             return None
 
+        optimization_target = experiment.get("optimization_target", "ctr")
+
         # Step 1: Try with requested window
         metrics_data = self._get_metrics_with_window(experiment_id, window_days)
-        variants = self._convert_to_variant_data(metrics_data, use_fallback=False)
+        variants = self._convert_to_variant_data(
+            metrics_data, optimization_target, use_fallback=False
+        )
         
         actual_window = window_days
         used_fallback = False
@@ -272,21 +330,24 @@ class AllocationService:
         # Step 2: If insufficient data, try expanding window
         if not self._has_sufficient_data(variants):
             if window_days < settings.max_window_days:
-                # Expand to max window
                 metrics_data = self._get_metrics_with_window(
                     experiment_id, 
                     settings.max_window_days
                 )
-                variants = self._convert_to_variant_data(metrics_data, use_fallback=False)
+                variants = self._convert_to_variant_data(
+                    metrics_data, optimization_target, use_fallback=False
+                )
                 actual_window = settings.max_window_days
         
         # Step 3: If still insufficient, use fallback
         if not self._has_sufficient_data(variants):
-            variants = self._convert_to_variant_data(metrics_data, use_fallback=True)
+            variants = self._convert_to_variant_data(
+                metrics_data, optimization_target, use_fallback=True
+            )
             used_fallback = True
 
         # Calculate allocation
-        allocations = self.engine.calculate_allocation(variants)
+        allocations = self.engine.calculate_allocation(variants, optimization_target)
 
         # Build response
         variant_allocations = []
@@ -297,9 +358,13 @@ class AllocationService:
                     is_control=v.is_control,
                     allocation_percentage=allocations.get(v.variant_name, 0.0),
                     metrics=VariantMetrics(
+                        sessions=v.sessions,
                         impressions=v.impressions,
                         clicks=v.clicks,
+                        revenue=v.revenue,
                         ctr=round(v.ctr, 6),
+                        rps=round(v.rps, 6),
+                        rpm=round(v.rpm, 6),
                     ),
                 )
             )
@@ -311,15 +376,16 @@ class AllocationService:
 
         # Determine algorithm description
         if used_fallback:
-            algorithm = "thompson_sampling (fallback: prior only)"
+            algorithm = f"thompson_sampling (fallback: prior only, target: {optimization_target})"
         else:
-            algorithm = "thompson_sampling"
+            algorithm = f"thompson_sampling (target: {optimization_target})"
 
         return AllocationResponse(
             experiment_id=experiment_id,
             experiment_name=experiment["name"],
             computed_at=datetime.utcnow(),
             algorithm=algorithm,
+            optimization_target=optimization_target,
             window_days=actual_window,
             allocations=variant_allocations,
         )

@@ -76,25 +76,25 @@ Isso garante consistência durante a navegação sem depender de login.
 
 ## Algoritmo
 flowchart LR
-    subgraph Dados["1️⃣ Coleta"]
+    subgraph Dados["1. Coleta"]
         D1["Impressões: 10.000"]
         D2["Clicks: 320"]
     end
 
-    subgraph Beta["2️⃣ Atualização Beta"]
+    subgraph Beta["2. Atualização Beta"]
         B1["α = 1 + 320 = 321"]
         B2["β = 99 + 9.680 = 9.779"]
-        B3["Beta(321, 9779)"]
+        B3["Beta 321, 9779"]
         B1 --> B3
         B2 --> B3
     end
 
-    subgraph MC["3️⃣ Monte Carlo (10.000x)"]
-        MC1["🎲 Sorteia CTR de cada variante"]
-        MC2["🏆 Conta quem venceu"]
+    subgraph MC["3. Monte Carlo 10.000x"]
+        MC1["Sorteia CTR de cada variante"]
+        MC2["Conta quem venceu"]
     end
 
-    subgraph Result["4️⃣ Alocação"]
+    subgraph Result["4. Alocação"]
         R1["Control: 5%"]
         R2["Variant A: 65%"]
         R3["Variant B: 30%"]

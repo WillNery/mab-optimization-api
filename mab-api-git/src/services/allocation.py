@@ -19,7 +19,7 @@ from src.models.allocation import (
 )
 
 
-@dataclass
+@dataclass # cria uma classe que guarda os dados
 class VariantData:
     """Internal representation of variant data for Thompson Sampling."""
     

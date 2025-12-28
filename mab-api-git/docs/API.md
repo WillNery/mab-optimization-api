@@ -95,8 +95,8 @@ Cria um novo experimento com suas variantes.
 | Target | Métrica | Fórmula | Uso |
 |--------|---------|---------|-----|
 | `ctr` | Click-Through Rate | clicks / impressions | Maximizar engajamento |
-| `rps` | Revenue Per Session | revenue / sessions | Maximizar receita por sessão |
-| `rpm` | Revenue Per Mille | (revenue / impressions) × 1000 | Maximizar receita por mil impressões |
+| `rps` | Revenue Per Session | revenue / sessions | Maximizar receita por usuário |
+| `rpm` | Revenue Per Mille | (revenue / impressions) × 1000 | Maximizar receita por inventário |
 
 **Validações:**
 - Deve ter pelo menos 1 variante com `is_control: true`
@@ -350,6 +350,10 @@ Retorna a alocação de tráfego otimizada usando Thompson Sampling.
         "clicks": 4480,
         "revenue": 2100.50,
         "ctr": 0.032,
+        "ctr_ci": {
+          "lower": 0.0311,
+          "upper": 0.0329
+        },
         "rps": 0.030,
         "rpm": 15.00
       }
@@ -364,6 +368,10 @@ Retorna a alocação de tráfego otimizada usando Thompson Sampling.
         "clicks": 5880,
         "revenue": 2750.25,
         "ctr": 0.042,
+        "ctr_ci": {
+          "lower": 0.0410,
+          "upper": 0.0430
+        },
         "rps": 0.038,
         "rpm": 19.64
       }
@@ -418,6 +426,8 @@ Retorna histórico de métricas diárias.
       "clicks": 320,
       "revenue": 150.50,
       "ctr": 0.032,
+      "ctr_ci_lower": 0.0287,
+      "ctr_ci_upper": 0.0356,
       "rps": 0.0301,
       "rpm": 15.05
     },
@@ -431,6 +441,8 @@ Retorna histórico de métricas diárias.
       "clicks": 420,
       "revenue": 185.75,
       "ctr": 0.042,
+      "ctr_ci_lower": 0.0383,
+      "ctr_ci_upper": 0.0460,
       "rps": 0.0357,
       "rpm": 18.575
     }
@@ -623,8 +635,24 @@ PRIOR_BETA=99
 | Métrica | Fórmula | Descrição |
 |---------|---------|-----------|
 | CTR | clicks ÷ impressions | Taxa de cliques |
+| CTR CI 95% | Wilson Score Interval | Intervalo de confiança do CTR |
 | RPS | revenue ÷ sessions | Receita por sessão |
 | RPM | (revenue ÷ impressions) × 1000 | Receita por mil impressões |
+
+### Intervalo de Confiança (Wilson Score)
+
+O intervalo de confiança do CTR é calculado usando o método Wilson Score, mais preciso que Wald para proporções:
+
+```
+z = 1.96 (95% confiança)
+
+lower = (p + z²/2n - z × √(p(1-p)/n + z²/4n²)) / (1 + z²/n)
+upper = (p + z²/2n + z × √(p(1-p)/n + z²/4n²)) / (1 + z²/n)
+
+onde:
+  p = CTR observado (clicks/impressions)
+  n = número de impressões
+```
 
 ---
 

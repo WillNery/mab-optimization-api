@@ -1,8 +1,8 @@
 """Thompson Sampling implementation for Multi-Armed Bandit."""
 
-import time
 from dataclasses import dataclass
 from datetime import datetime
+import time
 from typing import Optional
 
 import numpy as np
@@ -16,7 +16,7 @@ from src.models.allocation import (
     VariantAllocation,
     VariantMetrics,
 )
-from src.logging_config import logger, log_algorithm, log_db_query
+from src.logging_config import log_algorithm
 
 
 @dataclass
@@ -38,24 +38,33 @@ class ThompsonSamplingEngine:
     Thompson Sampling implementation for CTR optimization.
     
     Uses Beta-Bernoulli conjugate model:
-    - Prior: Beta(1, 99) - Expected CTR ~1%
+    - Prior: Beta(α₀, β₀) where α₀=1, β₀=99 (expected CTR ~1%)
     - Likelihood: Bernoulli (click or no click)
     - Posterior: Beta(alpha, beta) where:
-        - alpha = prior_alpha + clicks
-        - beta = prior_beta + impressions - clicks
+        - alpha = α₀ + clicks
+        - beta = β₀ + impressions - clicks
     
     Allocation is determined by simulating many draws from each variant's
     posterior and counting how often each variant has the highest sampled CTR.
     """
 
-    def __init__(self, n_samples: int | None = None):
+    def __init__(
+        self,
+        n_samples: int | None = None,
+        prior_alpha: int | None = None,
+        prior_beta: int | None = None,
+    ):
         """
         Initialize the Thompson Sampling engine.
         
         Args:
             n_samples: Number of Monte Carlo samples (default from settings)
+            prior_alpha: Prior α parameter (default from settings)
+            prior_beta: Prior β parameter (default from settings)
         """
         self.n_samples = n_samples or settings.thompson_samples
+        self.prior_alpha = prior_alpha or settings.prior_alpha
+        self.prior_beta = prior_beta or settings.prior_beta
 
     def calculate_allocation(self, variants: list[VariantData]) -> dict[str, float]:
         """
@@ -79,17 +88,7 @@ class ThompsonSamplingEngine:
         total_impressions = sum(v.impressions for v in variants)
         if total_impressions == 0:
             uniform_pct = round(100.0 / len(variants), 2)
-            logger.info(
-                "No data - using uniform allocation",
-                extra={
-                    "type": "algorithm",
-                    "num_variants": len(variants),
-                    "allocation_type": "uniform",
-                },
-            )
             return {v.variant_name: uniform_pct for v in variants}
-
-        start_time = time.perf_counter()
 
         # Sample from Beta distribution for each variant
         samples = {
@@ -125,21 +124,6 @@ class ThompsonSamplingEngine:
             max_variant = max(allocations, key=allocations.get)
             allocations[max_variant] += round(100.0 - total, 2)
 
-        duration_ms = (time.perf_counter() - start_time) * 1000
-
-        logger.info(
-            "Thompson Sampling completed",
-            extra={
-                "type": "algorithm",
-                "algorithm": "thompson_sampling",
-                "n_samples": self.n_samples,
-                "num_variants": len(variants),
-                "total_impressions": total_impressions,
-                "duration_ms": round(duration_ms, 2),
-                "allocations": allocations,
-            },
-        )
-
         return allocations
 
 
@@ -148,6 +132,9 @@ class AllocationService:
 
     def __init__(self):
         self.engine = ThompsonSamplingEngine()
+        self.min_impressions = settings.min_impressions
+        self.default_window = settings.default_window_days
+        self.max_window = settings.max_window_days
 
     def get_allocation(
         self,
@@ -157,6 +144,11 @@ class AllocationService:
         """
         Get optimized traffic allocation for an experiment.
         
+        Logic:
+        1. Collect metrics from last `window_days` days (default 14)
+        2. If any variant has < MIN_IMPRESSIONS, expand window to max (30 days)
+        3. If still < MIN_IMPRESSIONS, use fallback (prior only)
+        
         Args:
             experiment_id: Experiment UUID
             window_days: Number of days to look back (default: 14)
@@ -164,43 +156,47 @@ class AllocationService:
         Returns:
             Allocation response or None if experiment not found
         """
-        total_start = time.perf_counter()
+        start_time = time.time()
         
         if window_days is None:
-            window_days = settings.default_window_days
+            window_days = self.default_window
 
         # Get experiment
-        db_start = time.perf_counter()
         experiment = ExperimentRepository.get_experiment_by_id(experiment_id)
-        log_db_query(
-            query_name="get_experiment_by_id",
-            duration_ms=(time.perf_counter() - db_start) * 1000,
-            experiment_id=experiment_id,
-        )
-        
         if not experiment:
-            logger.warning(
-                "Experiment not found",
-                extra={
-                    "type": "not_found",
-                    "experiment_id": experiment_id,
-                },
-            )
             return None
 
-        # Get metrics for allocation
-        db_start = time.perf_counter()
+        # Get metrics with initial window
         metrics_data = MetricsRepository.get_metrics_for_allocation(
             experiment_id=experiment_id,
             window_days=window_days,
         )
-        log_db_query(
-            query_name="get_metrics_for_allocation",
-            duration_ms=(time.perf_counter() - db_start) * 1000,
-            experiment_id=experiment_id,
-            window_days=window_days,
-            rows_affected=len(metrics_data),
+
+        # Check if any variant has insufficient data
+        min_variant_impressions = min(
+            (int(m["impressions"]) for m in metrics_data),
+            default=0
         )
+        
+        # Track if we used fallback
+        used_fallback = False
+        actual_window = window_days
+        
+        # If insufficient data and not already at max window, expand
+        if min_variant_impressions < self.min_impressions and window_days < self.max_window:
+            actual_window = self.max_window
+            metrics_data = MetricsRepository.get_metrics_for_allocation(
+                experiment_id=experiment_id,
+                window_days=self.max_window,
+            )
+            min_variant_impressions = min(
+                (int(m["impressions"]) for m in metrics_data),
+                default=0
+            )
+
+        # If still insufficient, mark as fallback (will use prior only)
+        if min_variant_impressions < self.min_impressions:
+            used_fallback = True
 
         # Convert to VariantData objects
         variants = [
@@ -241,21 +237,29 @@ class AllocationService:
             key=lambda x: (-x.is_control, -x.allocation_percentage)
         )
 
-        total_duration = (time.perf_counter() - total_start) * 1000
-        
+        # Build algorithm description
+        algorithm_desc = "thompson_sampling"
+        if used_fallback:
+            algorithm_desc += " (fallback: prior only)"
+
+        # Log algorithm execution
+        duration_ms = (time.time() - start_time) * 1000
         log_algorithm(
             algorithm="thompson_sampling",
             experiment_id=experiment_id,
-            duration_ms=total_duration,
-            window_days=window_days,
+            duration_ms=duration_ms,
+            n_samples=self.engine.n_samples,
             num_variants=len(variants),
+            total_impressions=sum(v.impressions for v in variants),
+            window_days=actual_window,
+            used_fallback=used_fallback,
         )
 
         return AllocationResponse(
             experiment_id=experiment_id,
             experiment_name=experiment["name"],
             computed_at=datetime.utcnow(),
-            algorithm="thompson_sampling",
-            window_days=window_days,
+            algorithm=algorithm_desc,
+            window_days=actual_window,
             allocations=variant_allocations,
         )

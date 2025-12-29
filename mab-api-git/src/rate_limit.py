@@ -79,7 +79,7 @@ rate_limiter = RateLimiter()
 RATE_LIMITS = {
     "POST /experiments": {"max_requests": 10, "window_seconds": 60},
     "POST /experiments/{experiment_id}/metrics": {"max_requests": 100, "window_seconds": 60},
-    "GET /experiments/{experiment_id}/allocation": {"max_requests": 60, "window_seconds": 60},
+    "GET /experiments/{experiment_id}/allocation": {"max_requests": 300, "window_seconds": 60},
     "GET /experiments/{experiment_id}/history": {"max_requests": 60, "window_seconds": 60},
     "GET /experiments/{experiment_id}": {"max_requests": 120, "window_seconds": 60},
     "default": {"max_requests": 100, "window_seconds": 60},

@@ -58,7 +58,7 @@ This ensures:
 |----------|-------|
 | POST /experiments | 10/min |
 | POST /metrics | 100/min |
-| GET /allocation | 60/min |
+| GET /allocation | 300/min |
 | GET /history | 60/min |
     """,
     version="1.0.0",

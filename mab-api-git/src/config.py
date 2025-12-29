@@ -21,18 +21,18 @@ class Settings(BaseSettings):
     # Algorithm configuration
     default_window_days: int = 14
     max_window_days: int = 30
-    min_impressions: int = 200
+    min_impressions: int = 10000
     thompson_samples: int = 10000
     prior_alpha: int = 1
     prior_beta: int = 99
-
-    # Logging configuration
-    log_level: str = "INFO"  # DEBUG, INFO, WARNING, ERROR, CRITICAL
-
-    # Rate limiting configuration
+    
+    # Logging
+    log_level: str = "INFO"
+    
+    # Rate limiting
     rate_limit_enabled: bool = True
-    rate_limit_default_max: int = 100  # requests per window
-    rate_limit_default_window: int = 60  # seconds
+    rate_limit_default_max: int = 100
+    rate_limit_default_window: int = 60
 
     class Config:
         env_file = ".env"

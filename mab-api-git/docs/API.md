@@ -322,7 +322,7 @@ Retorna a alocação de tráfego otimizada usando Thompson Sampling.
 **Algoritmo:**
 
 1. Busca métricas dos últimos `window_days` dias
-2. Se alguma variante tem < 200 impressões, expande para 30 dias
+2. Se alguma variante tem < 10.000 impressões, expande para 30 dias
 3. Se ainda insuficiente, usa fallback (prior only)
 4. Calcula alocação baseado no `optimization_target` do experimento:
    - **CTR**: Beta(α₀ + clicks, β₀ + impressions - clicks)
@@ -747,7 +747,7 @@ API_PORT=8000
 # Algoritmo
 DEFAULT_WINDOW_DAYS=14
 MAX_WINDOW_DAYS=30
-MIN_IMPRESSIONS=200
+MIN_IMPRESSIONS=10000
 THOMPSON_SAMPLES=10000
 
 # Prior (Beta distribution para CTR)

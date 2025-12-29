@@ -11,6 +11,8 @@ API para otimização de tráfego em testes A/B usando algoritmo Multi-Armed Ban
 - [Configuração](#configuração)
 - [Uso](#uso)
 - [API Endpoints](#api-endpoints)
+- [Rate Limiting](#rate-limiting)
+- [Logging Estruturado](#logging-estruturado)
 - [Testes](#testes)
 
 ## Visão Geral
@@ -23,6 +25,8 @@ Esta API recebe dados de experimentos A/B (impressões e clicks por variante), p
 - **Banco de dados**: Snowflake
 - **Multi-variante**: Suporta N variantes (não apenas A/B)
 - **Tratamento de não-estacionariedade** via janela temporal
+- **Rate Limiting**: Proteção contra abuso
+- **Logging Estruturado**: JSON para observabilidade
 - **Documentação**: Swagger UI automático
 
 ## Arquitetura
@@ -49,7 +53,7 @@ flowchart TD
 
     subgraph Algorithm["Camada de Algoritmo"]
         DAILY --> TS[Thompson Sampling]
-        TS -->|"janela: 14d → 30d\nprior: Beta 1,99\nmin: 200 imp"| RESULT[Alocação %]
+        TS -->|"janela: 14d → 30d\nprior: Beta 1,99\nmin: 10k imp"| RESULT[Alocação %]
     end
 
     subgraph Apply["Camada de Aplicação"]
@@ -64,12 +68,25 @@ flowchart TD
 2. **Armazenamento**: Dados são salvos em `raw_metrics` (auditoria) e `daily_metrics` (limpo)
 3. **Cálculo**: Thompson Sampling processa últimos 14 dias e retorna alocação
 
-### Atribuição de Variantes
+### Atribuição de Variantes (CDP)
 
-1. A atribuição de variantes é feita pelo CDP com base na sessão (não no usuário).
-2. A variante é determinada por `hash(session_id)` aplicado aos ranges de alocação
-retornados pela API, garantindo consistência, independência de login e
-compatibilidade com restrições de privacidade.
+A atribuição de variantes é responsabilidade do CDP, não da API MAB.
+
+**Fluxo:**
+1. Usuário acessa página
+2. CDP gera session_id
+3. CDP calcula: `hash(session_id) % 100`
+4. CDP atribui variante baseado nos ranges de alocação
+
+**Exemplo:**
+- API retorna: Control 5%, Variant A 65%, Variant B 30%
+- CDP define ranges: Control [0-4], Variant A [5-69], Variant B [70-99]
+- `hash("session_xyz") % 100 = 42` → Variant A
+
+**Isso garante:**
+- Consistência durante a navegação (mesmo session = mesma variante)
+- Não depende de login
+- API recebe apenas métricas agregadas por variante/dia
 
 ## Algoritmo
 ```mermaid
@@ -149,22 +166,29 @@ O ambiente é tratado como **não estacionário**. Para evitar aprender com dado
 ### Regras
 
 - **Janela padrão**: últimos 14 dias
-- **Volume mínimo**: 200 impressões por variante
+- **Volume mínimo**: 10.000 impressões por variante
 - **Idade máxima absoluta**: 30 dias
 
 ### Lógica
 
 ```
 1. Coletar métricas dos últimos 14 dias
-2. Se uma variante tiver >= 200 impressões:
+2. Se todas as variantes tiverem >= 10.000 impressões:
        usar esses dados
 3. Caso contrário:
        expandir janela até 30 dias
-4. Se ainda assim não atingir 200 impressões:
+4. Se ainda assim não atingir 10.000 impressões:
        usar apenas o prior (fallback)
 ```
 
 Isso garante estabilidade estatística sem comprometer adaptação a mudanças recentes.
+
+### Por que 10.000 impressões?
+
+Para publishers com receita média de R$ 30k/mês (~50.000+ impressões/dia), o threshold de 10.000 impressões é atingido em poucas horas. Isso garante:
+- Intervalos de confiança estreitos antes de otimizar
+- Evita decisões baseadas em ruído de curto prazo
+- Cold start de ~1 dia para novos experimentos
 
 ---
 
@@ -223,12 +247,20 @@ API_PORT=8000
 # Algoritmo
 DEFAULT_WINDOW_DAYS=14
 MAX_WINDOW_DAYS=30
-MIN_IMPRESSIONS=200
+MIN_IMPRESSIONS=10000
 THOMPSON_SAMPLES=10000
 
 # Prior (Beta distribution)
 PRIOR_ALPHA=1
 PRIOR_BETA=99
+
+# Logging
+LOG_LEVEL=INFO  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# Rate Limiting
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_DEFAULT_MAX=100
+RATE_LIMIT_DEFAULT_WINDOW=60
 ```
 
 ## Uso
@@ -317,11 +349,99 @@ curl http://localhost:8000/experiments/{experiment_id}/allocation
 }
 ```
 
+**Resposta com Fallback:**
+
+Quando não há dados suficientes:
+```json
+{
+  "algorithm": "thompson_sampling (fallback: prior only)",
+  "window_days": 30,
+  ...
+}
+```
+
 ### 4. Histórico de Métricas
 
 ```bash
 curl http://localhost:8000/experiments/{experiment_id}/history
 ```
+
+## Rate Limiting
+
+A API possui rate limiting para proteger contra abuso e garantir disponibilidade.
+
+### Limites por Endpoint
+
+| Endpoint | Limite | Uso |
+|----------|--------|-----|
+| POST /experiments | 10/min | Criação de experimentos |
+| POST /metrics | 100/min | Ingestão de métricas |
+| GET /allocation | 300/min | Consulta de alocação (job diário) |
+| GET /history | 60/min | Consulta de histórico |
+| Default | 100/min | Outros endpoints |
+
+### Headers de Resposta
+
+Toda resposta inclui headers de rate limit:
+
+```
+X-RateLimit-Limit: 300
+X-RateLimit-Remaining: 299
+X-RateLimit-Reset: 60
+```
+
+### Resposta 429 (Rate Limit Exceeded)
+
+```json
+{
+  "detail": {
+    "error": "Rate limit exceeded",
+    "limit": 300,
+    "window_seconds": 60,
+    "retry_after": 45
+  }
+}
+```
+
+## Logging Estruturado
+
+A API usa logging estruturado em formato JSON para observabilidade.
+
+### Formato dos Logs
+
+```json
+{
+  "timestamp": "2025-01-15T10:30:00.123Z",
+  "level": "INFO",
+  "logger": "mab_api",
+  "message": "GET /experiments/abc/allocation 200",
+  "type": "http_request",
+  "method": "GET",
+  "path": "/experiments/abc/allocation",
+  "status_code": 200,
+  "duration_ms": 145.32,
+  "client_ip": "192.168.1.1"
+}
+```
+
+### Tipos de Log
+
+| Type | Descrição |
+|------|-----------|
+| `http_request` | Requisições HTTP |
+| `db_query` | Queries ao Snowflake |
+| `algorithm` | Execução do Thompson Sampling |
+| `error` | Erros e exceções |
+| `startup` | Inicialização da API |
+| `shutdown` | Encerramento da API |
+
+### Integração com Observabilidade
+
+Os logs em JSON são compatíveis com:
+- **Datadog**: Log pipeline automático
+- **CloudWatch**: Logs Insights queries
+- **ELK Stack**: Elasticsearch indexing
+- **Splunk**: JSON source type
 
 ## Testes
 
@@ -346,6 +466,9 @@ mab-api/
 ├── src/
 │   ├── main.py              # FastAPI app
 │   ├── config.py            # Settings
+│   ├── logging_config.py    # Structured logging
+│   ├── rate_limit.py        # Rate limiting middleware
+│   ├── middleware.py        # Request logging middleware
 │   ├── models/              # Pydantic schemas
 │   ├── repositories/        # Data access
 │   ├── services/            # Business logic
@@ -355,12 +478,17 @@ mab-api/
 │   └── snowflake/           # DDL scripts
 ├── tests/
 │   ├── unit/
+│   │   ├── test_allocation.py
+│   │   ├── test_rate_limit.py
+│   │   ├── test_logging.py
+│   │   └── test_middleware.py
 │   └── integration/
+│       └── test_api.py
 ├── dashboard/
 │   └── streamlit_dashboard.py
 ├── docs/
 │   ├── DATA_DICTIONARY.md
-│   └── ERD.md
+│   ├── ERD.md
 │   └── API.md
 ├── README.md
 └── pyproject.toml

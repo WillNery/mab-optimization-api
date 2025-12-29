@@ -68,25 +68,11 @@ flowchart TD
 2. **Armazenamento**: Dados são salvos em `raw_metrics` (auditoria) e `daily_metrics` (limpo)
 3. **Cálculo**: Thompson Sampling processa últimos 14 dias e retorna alocação
 
-### Atribuição de Variantes (CDP)
+### Atribuição de Variantes
 
-A atribuição de variantes é responsabilidade do CDP, não da API MAB.
+A API **não** atribui variantes. Ela apenas retorna a % de alocação.
 
-**Fluxo:**
-1. Usuário acessa página
-2. CDP gera session_id
-3. CDP calcula: `hash(session_id) % 100`
-4. CDP atribui variante baseado nos ranges de alocação
-
-**Exemplo:**
-- API retorna: Control 5%, Variant A 65%, Variant B 30%
-- CDP define ranges: Control [0-4], Variant A [5-69], Variant B [70-99]
-- `hash("session_xyz") % 100 = 42` → Variant A
-
-**Isso garante:**
-- Consistência durante a navegação (mesmo session = mesma variante)
-- Não depende de login
-- API recebe apenas métricas agregadas por variante/dia
+O CDP usa essa % para distribuir o tráfego por sessão.
 
 ## Algoritmo
 ```mermaid

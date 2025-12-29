@@ -452,6 +452,111 @@ Retorna histórico de métricas diárias.
 
 ---
 
+## Rate Limiting
+
+A API possui rate limiting para proteger contra abuso e garantir disponibilidade.
+
+### Limites por Endpoint
+
+| Endpoint | Limite | Uso |
+|----------|--------|-----|
+| POST /experiments | 10/min | Criação de experimentos |
+| POST /metrics | 100/min | Ingestão de métricas |
+| GET /allocation | 300/min | Consulta de alocação (job diário) |
+| GET /history | 60/min | Consulta de histórico |
+| GET /experiments/{id} | 120/min | Consulta de experimento |
+| Default | 100/min | Outros endpoints |
+
+### Headers de Resposta
+
+Toda resposta inclui headers de rate limit:
+
+```
+X-RateLimit-Limit: 300        # Limite máximo na janela
+X-RateLimit-Remaining: 299    # Requisições restantes
+X-RateLimit-Reset: 60         # Segundos até reset da janela
+```
+
+### Response 429 (Rate Limit Exceeded)
+
+```json
+{
+  "detail": {
+    "error": "Rate limit exceeded",
+    "limit": 300,
+    "window_seconds": 60,
+    "retry_after": 45
+  }
+}
+```
+
+**Headers adicionais:**
+```
+Retry-After: 45
+```
+
+---
+
+## Logging Estruturado
+
+A API usa logging estruturado em formato JSON para observabilidade.
+
+### Formato dos Logs
+
+```json
+{
+  "timestamp": "2025-01-15T10:30:00.123Z",
+  "level": "INFO",
+  "logger": "mab_api",
+  "message": "GET /experiments/abc/allocation 200",
+  "type": "http_request",
+  "method": "GET",
+  "path": "/experiments/abc/allocation",
+  "status_code": 200,
+  "duration_ms": 145.32,
+  "client_ip": "192.168.1.1",
+  "request_id": "req-12345"
+}
+```
+
+### Tipos de Log
+
+| Type | Descrição | Campos extras |
+|------|-----------|---------------|
+| `http_request` | Requisições HTTP | method, path, status_code, duration_ms, client_ip |
+| `db_query` | Queries ao Snowflake | query_name, duration_ms, rows_affected |
+| `algorithm` | Execução do Thompson Sampling | experiment_id, n_samples, num_variants |
+| `error` | Erros e exceções | error_type, message |
+| `rate_limit` | Rate limit excedido | key, endpoint, limit |
+| `startup` | Inicialização da API | host, port, config |
+| `shutdown` | Encerramento da API | - |
+
+### Exemplo de Log de Algoritmo
+
+```json
+{
+  "timestamp": "2025-01-15T10:30:00.456Z",
+  "level": "INFO",
+  "type": "algorithm",
+  "algorithm": "thompson_sampling",
+  "experiment_id": "exp_123",
+  "duration_ms": 150.0,
+  "n_samples": 10000,
+  "num_variants": 3,
+  "total_impressions": 450000
+}
+```
+
+### Integração com Observabilidade
+
+Os logs em JSON são compatíveis com:
+- **Datadog**: Log pipeline automático
+- **CloudWatch**: Logs Insights queries
+- **ELK Stack**: Elasticsearch indexing
+- **Splunk**: JSON source type
+
+---
+
 ## Códigos de Status
 
 | Código | Significado | Quando ocorre |
@@ -462,6 +567,7 @@ Retorna histórico de métricas diárias.
 | 404 | Not Found | Experimento ou variante não encontrado |
 | 409 | Conflict | Nome de experimento já existe |
 | 422 | Unprocessable Entity | Erro de validação |
+| 429 | Too Many Requests | Rate limit excedido |
 | 500 | Internal Server Error | Erro interno (ex: banco de dados) |
 
 ---
@@ -485,6 +591,18 @@ Retorna histórico de métricas diárias.
 ```json
 {
   "detail": "Mensagem descritiva do erro"
+}
+```
+
+### Erro de Rate Limit (429)
+```json
+{
+  "detail": {
+    "error": "Rate limit exceeded",
+    "limit": 100,
+    "window_seconds": 60,
+    "retry_after": 30
+  }
 }
 ```
 
@@ -547,6 +665,11 @@ curl -X POST http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619
 curl http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619b32/allocation
 ```
 
+**Verificar headers de rate limit:**
+```bash
+curl -i http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619b32/allocation
+```
+
 ### Python
 
 ```python
@@ -565,6 +688,10 @@ response = requests.post(f"{BASE_URL}/experiments", json={
 })
 experiment = response.json()
 experiment_id = experiment["id"]
+
+# Verificar rate limit headers
+print(f"Rate Limit: {response.headers.get('X-RateLimit-Limit')}")
+print(f"Remaining: {response.headers.get('X-RateLimit-Remaining')}")
 
 # Enviar métricas com sessões e receita
 requests.post(f"{BASE_URL}/experiments/{experiment_id}/metrics", json={
@@ -626,6 +753,14 @@ THOMPSON_SAMPLES=10000
 # Prior (Beta distribution para CTR)
 PRIOR_ALPHA=1
 PRIOR_BETA=99
+
+# Logging
+LOG_LEVEL=INFO  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+
+# Rate Limiting
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_DEFAULT_MAX=100
+RATE_LIMIT_DEFAULT_WINDOW=60
 ```
 
 ---
@@ -653,18 +788,6 @@ onde:
   p = CTR observado (clicks/impressions)
   n = número de impressões
 ```
-
----
-
-## Rate Limits
-
-Atualmente não há rate limiting implementado. Para produção, recomenda-se:
-
-| Endpoint | Limite sugerido |
-|----------|-----------------|
-| POST /experiments | 10/minuto |
-| POST /metrics | 100/minuto |
-| GET /allocation | 60/minuto |
 
 ---
 

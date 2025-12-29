@@ -66,25 +66,10 @@ flowchart TD
 
 ### Atribuição de Variantes
 
-Atribuição de Variantes (CDP)
-
-A atribuição de variantes é responsabilidade do CDP, não da API MAB.
-
-Fluxo recomendado:
-1. Usuário acessa página
-2. CDP gera session_id
-3. CDP calcula: hash(session_id) % 100
-4. CDP atribui variante baseado nos ranges de alocação
-
-Exemplo:
-- API retorna: Control 5%, Variant A 65%, Variant B 30%
-- CDP define ranges: Control [0-4], Variant A [5-69], Variant B [70-99]
-- hash("session_xyz") % 100 = 42 → Variant A
-
-Isso garante:
-- Consistência durante a navegação (mesmo session = mesma variante)
-- Não depende de login
-- API recebe apenas métricas agregadas por variante/dia
+1. A atribuição de variantes é feita pelo CDP com base na sessão (não no usuário).
+2. A variante é determinada por `hash(session_id)` aplicado aos ranges de alocação
+retornados pela API, garantindo consistência, independência de login e
+compatibilidade com restrições de privacidade.
 
 ## Algoritmo
 ```mermaid

@@ -1,6 +1,8 @@
 """Experiment endpoints."""
 
+from enum import Enum
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from src.models.experiment import ExperimentCreate, ExperimentResponse
 from src.models.metrics import MetricsBatchRequest, MetricsResponse
@@ -10,6 +12,18 @@ from src.services.allocation import AllocationService
 from src.config import settings
 
 router = APIRouter(prefix="/experiments", tags=["Experiments"])
+
+
+class ExperimentStatus(str, Enum):
+    """Valid experiment statuses."""
+    active = "active"
+    paused = "paused"
+    completed = "completed"
+
+
+class StatusUpdate(BaseModel):
+    """Request body for status update."""
+    status: ExperimentStatus
 
 
 @router.post(
@@ -45,6 +59,29 @@ async def get_experiment(experiment_id: str):
     if not result:
         raise HTTPException(status_code=404, detail="Experiment not found")
     return result
+
+
+@router.patch(
+    "/{experiment_id}/status",
+    response_model=ExperimentResponse,
+    summary="Update Experiment Status",
+    description="Update experiment status (active, paused, completed)",
+)
+async def update_status(experiment_id: str, data: StatusUpdate):
+    """
+    Update experiment status.
+    
+    - **active**: Experiment is running, allocation will be calculated
+    - **paused**: Experiment is temporarily stopped
+    - **completed**: Experiment is finished
+    """
+    from src.repositories.experiment import ExperimentRepository
+    
+    updated = ExperimentRepository.update_status(experiment_id, data.status.value)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    
+    return ExperimentService.get_experiment(experiment_id)
 
 
 @router.post(
@@ -94,7 +131,20 @@ async def get_allocation(
     
     Variants with higher CTR will receive more traffic allocation,
     while still exploring underperforming variants.
+    
+    Note: Only works for experiments with status 'active'.
     """
+    # Check experiment status
+    experiment = ExperimentService.get_experiment(experiment_id)
+    if not experiment:
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    
+    if experiment.status != "active":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Experiment is '{experiment.status}'. Only 'active' experiments can calculate allocation."
+        )
+    
     service = AllocationService()
     result = service.get_allocation(experiment_id, window_days)
     if not result:

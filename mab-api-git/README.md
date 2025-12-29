@@ -187,7 +187,7 @@ Isso garante estabilidade estatística sem comprometer adaptação a mudanças r
 
 ### Requisitos
 
-- Python 3.11+
+- Python >=3.11, <3.13
 - Snowflake account
 
 ### Setup Local

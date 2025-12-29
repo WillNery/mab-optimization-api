@@ -2,8 +2,6 @@
 
 import uuid
 from datetime import date
-from decimal import Decimal
-from typing import Optional
 
 from src.repositories.database import execute_query, get_connection
 from src.sql import MetricsQueries
@@ -17,12 +15,8 @@ class MetricsRepository:
     def insert_metrics(
         variant_id: str,
         metric_date: date,
-        sessions: int,
         impressions: int,
         clicks: int,
-        revenue: Decimal,
-        source: str = "api",
-        batch_id: Optional[str] = None,
     ) -> None:
         """
         Insert metrics into both raw and daily tables.
@@ -33,12 +27,8 @@ class MetricsRepository:
         Args:
             variant_id: Variant UUID
             metric_date: Date of the metrics
-            sessions: Number of unique sessions
             impressions: Number of impressions
             clicks: Number of clicks
-            revenue: Revenue in USD
-            source: Origin of data (api, gam, cdp, manual)
-            batch_id: ID of the ingestion batch for traceability
         """
         raw_id = str(uuid.uuid4())
         daily_id = str(uuid.uuid4())
@@ -53,12 +43,8 @@ class MetricsRepository:
                         "id": raw_id,
                         "variant_id": variant_id,
                         "metric_date": metric_date,
-                        "sessions": sessions,
                         "impressions": impressions,
                         "clicks": clicks,
-                        "revenue": float(revenue),
-                        "source": source,
-                        "batch_id": batch_id,
                     },
                 )
 
@@ -69,10 +55,8 @@ class MetricsRepository:
                         "id": daily_id,
                         "variant_id": variant_id,
                         "metric_date": metric_date,
-                        "sessions": sessions,
                         "impressions": impressions,
                         "clicks": clicks,
-                        "revenue": float(revenue),
                     },
                 )
 
@@ -106,6 +90,8 @@ class MetricsRepository:
             {
                 "experiment_id": experiment_id,
                 "window_days": window_days,
+                "prior_alpha": settings.prior_alpha,
+                "prior_beta": settings.prior_beta,
             },
         )
 

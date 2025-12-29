@@ -15,7 +15,6 @@ class ExperimentRepository:
     def create_experiment(
         name: str,
         description: Optional[str],
-        optimization_target: str,
         variants: list[dict],
     ) -> dict:
         """
@@ -24,7 +23,6 @@ class ExperimentRepository:
         Args:
             name: Experiment name
             description: Experiment description
-            optimization_target: Metric to optimize (ctr, rps, rpm)
             variants: List of variant dicts with 'name' and 'is_control'
             
         Returns:
@@ -44,7 +42,6 @@ class ExperimentRepository:
                         "name": name,
                         "description": description,
                         "status": "active",
-                        "optimization_target": optimization_target,
                     },
                 )
 
@@ -75,7 +72,6 @@ class ExperimentRepository:
                     "name": name,
                     "description": description,
                     "status": "active",
-                    "optimization_target": optimization_target,
                     "variants": created_variants,
                     "created_at": now,
                     "updated_at": now,
@@ -177,3 +173,26 @@ class ExperimentRepository:
             {"experiment_id": experiment_id, "name": variant_name},
         )
         return results[0] if results else None
+
+    @staticmethod
+    def update_status(experiment_id: str, status: str) -> bool:
+        """
+        Update experiment status.
+        
+        Args:
+            experiment_id: Experiment UUID
+            status: New status ('active', 'paused', 'completed')
+            
+        Returns:
+            True if updated, False if experiment not found
+        """
+        # Verify experiment exists
+        experiment = ExperimentRepository.get_experiment_by_id(experiment_id)
+        if not experiment:
+            return False
+        
+        execute_write(
+            ExperimentQueries.UPDATE_STATUS,
+            {"id": experiment_id, "status": status},
+        )
+        return True

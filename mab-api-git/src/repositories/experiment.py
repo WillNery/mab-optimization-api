@@ -1,99 +1,61 @@
-"""Pydantic models for experiments and variants."""
-
-from datetime import datetime
-from enum import Enum
+"""Repository for experiment data access."""
 from typing import Optional
-
-from pydantic import BaseModel, Field, model_validator
-
-
-class OptimizationTarget(str, Enum):
-    """Valid optimization targets."""
-    ctr = "ctr"
-    rps = "rps"
-    rpm = "rpm"
+from src.database.database import execute_query, execute_write
+from src.sql.queries import ExperimentQueries, VariantQueries
 
 
-class VariantCreate(BaseModel):
-    """Schema for creating a variant."""
+class ExperimentRepository:
+    """Repository for experiment database operations."""
 
-    name: str = Field(..., min_length=1, max_length=100, description="Variant name")
-    is_control: bool = Field(default=False, description="Whether this is the control variant")
+    @staticmethod
+    def create_experiment(experiment_data: dict) -> None:
+        """Insert a new experiment."""
+        execute_write(ExperimentQueries.INSERT, experiment_data)
 
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {"name": "control", "is_control": True},
-                {"name": "variant_a", "is_control": False},
-            ]
-        }
-    }
+    @staticmethod
+    def get_experiment_by_id(experiment_id: str) -> Optional[dict]:
+        """Get experiment by ID."""
+        result = execute_query(ExperimentQueries.SELECT_BY_ID, {"id": experiment_id})
+        return result[0] if result else None
 
+    @staticmethod
+    def get_experiment_by_name(name: str) -> Optional[dict]:
+        """Get experiment by name."""
+        result = execute_query(ExperimentQueries.SELECT_BY_NAME, {"name": name})
+        return result[0] if result else None
 
-class VariantResponse(BaseModel):
-    """Schema for variant response."""
-
-    id: str
-    name: str
-    is_control: bool
-    created_at: datetime
-
-
-class ExperimentCreate(BaseModel):
-    """Schema for creating an experiment."""
-
-    name: str = Field(..., min_length=1, max_length=255, description="Experiment name")
-    description: Optional[str] = Field(None, description="Experiment description")
-    optimization_target: OptimizationTarget = Field(
-        default=OptimizationTarget.ctr,
-        description="Metric to optimize: ctr, rps, or rpm"
-    )
-    variants: list[VariantCreate] = Field(
-        ..., min_length=2, description="List of variants (minimum 2)"
-    )
-
-    @model_validator(mode="after")
-    def validate_has_control(self) -> "ExperimentCreate":
-        """Ensure at least one variant is marked as control."""
-        has_control = any(v.is_control for v in self.variants)
-        if not has_control:
-            raise ValueError("At least one variant must be marked as control (is_control=True)")
-        return self
-
-    @model_validator(mode="after")
-    def validate_unique_names(self) -> "ExperimentCreate":
-        """Ensure variant names are unique within the experiment."""
-        names = [v.name for v in self.variants]
-        if len(names) != len(set(names)):
-            raise ValueError("Variant names must be unique within an experiment")
-        return self
-
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {
-                    "name": "homepage_cta_test",
-                    "description": "Testing CTA button variants on homepage",
-                    "optimization_target": "ctr",
-                    "variants": [
-                        {"name": "control", "is_control": True},
-                        {"name": "variant_a", "is_control": False},
-                        {"name": "variant_b", "is_control": False},
-                    ],
-                }
-            ]
-        }
-    }
+    @staticmethod
+    def update_status(experiment_id: str, status: str) -> None:
+        """Update experiment status."""
+        execute_write(
+            ExperimentQueries.UPDATE_STATUS,
+            {"id": experiment_id, "status": status}
+        )
 
 
-class ExperimentResponse(BaseModel):
-    """Schema for experiment response."""
+class VariantRepository:
+    """Repository for variant database operations."""
 
-    id: str
-    name: str
-    description: Optional[str]
-    status: str
-    optimization_target: str = "ctr"
-    variants: list[VariantResponse]
-    created_at: datetime
-    updated_at: datetime
+    @staticmethod
+    def create_variant(variant_data: dict) -> None:
+        """Insert a new variant."""
+        execute_write(VariantQueries.INSERT, variant_data)
+
+    @staticmethod
+    def get_variants_by_experiment(experiment_id: str) -> list[dict]:
+        """Get all variants for an experiment."""
+        return execute_query(
+            VariantQueries.SELECT_BY_EXPERIMENT,
+            {"experiment_id": experiment_id}
+        )
+
+    @staticmethod
+    def get_variant_by_name_and_experiment(
+        experiment_id: str, name: str
+    ) -> Optional[dict]:
+        """Get a specific variant by name within an experiment."""
+        result = execute_query(
+            VariantQueries.SELECT_BY_NAME_AND_EXPERIMENT,
+            {"experiment_id": experiment_id, "name": name}
+        )
+        return result[0] if result else None

@@ -5,18 +5,18 @@ class ExperimentQueries:
     """SQL queries for experiments."""
 
     INSERT = """
-        INSERT INTO experiments (id, name, description, status)
-        VALUES (%(id)s, %(name)s, %(description)s, %(status)s)
+        INSERT INTO experiments (id, name, description, status, optimization_target)
+        VALUES (%(id)s, %(name)s, %(description)s, %(status)s, %(optimization_target)s)
     """
 
     SELECT_BY_ID = """
-        SELECT id, name, description, status, created_at, updated_at
+        SELECT id, name, description, status, optimization_target, created_at, updated_at
         FROM experiments
         WHERE id = %(id)s
     """
 
     SELECT_BY_NAME = """
-        SELECT id, name, description, status, created_at, updated_at
+        SELECT id, name, description, status, optimization_target, created_at, updated_at
         FROM experiments
         WHERE name = %(name)s
     """

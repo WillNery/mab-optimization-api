@@ -79,7 +79,8 @@ class MetricsQueries:
             INSERT (id, variant_id, metric_date, impressions, clicks)
             VALUES (source.id, source.variant_id, source.metric_date, source.impressions, source.clicks)
     """
-
+    
+    """Query que alimenta o TS"""
     SELECT_FOR_ALLOCATION = """
         WITH aggregated AS (
             SELECT 

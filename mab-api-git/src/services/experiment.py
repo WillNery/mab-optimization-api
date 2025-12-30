@@ -36,8 +36,8 @@ class ExperimentService:
         result = ExperimentRepository.create_experiment(
             name=data.name,
             description=data.description,
-            optimization_target=data.optimization_target,
             variants=variants,
+            optimization_target=data.optimization_target,
         )
 
         return ExperimentResponse(
@@ -79,7 +79,7 @@ class ExperimentService:
             name=result["name"],
             description=result["description"],
             status=result["status"],
-            optimization_target=result["optimization_target"],
+            optimization_target=result.get("optimization_target", "ctr"),
             variants=[
                 VariantResponse(
                     id=v["id"],
@@ -132,17 +132,12 @@ class ExperimentService:
             MetricsRepository.insert_metrics(
                 variant_id=variant_id,
                 metric_date=data.date,
-                sessions=metric.sessions,
                 impressions=metric.impressions,
                 clicks=metric.clicks,
-                revenue=metric.revenue,
-                source=data.source,
-                batch_id=data.batch_id,
             )
 
         return MetricsResponse(
             message="Metrics recorded successfully",
             date=data.date,
             variants_updated=len(data.metrics),
-            batch_id=data.batch_id,
         )

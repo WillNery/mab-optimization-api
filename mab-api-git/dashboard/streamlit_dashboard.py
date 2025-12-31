@@ -13,7 +13,7 @@ import numpy as np
 # ===========================================
 PRIOR_ALPHA = 1
 PRIOR_BETA = 99
-MIN_IMPRESSIONS = 200
+MIN_IMPRESSIONS = 10000
 DEFAULT_WINDOW_DAYS = 14
 MAX_WINDOW_DAYS = 30
 THOMPSON_SAMPLES = 10000

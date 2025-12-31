@@ -234,6 +234,8 @@ erDiagram
     "impressions": 50000,
     "clicks": 1600,
     "ctr": 0.032,
+    "ctr_ci_lower": 0.030512,
+    "ctr_ci_upper": 0.033588,
     "beta_alpha": 1601,
     "beta_beta": 48499
   },
@@ -245,6 +247,8 @@ erDiagram
     "impressions": 50000,
     "clicks": 1900,
     "ctr": 0.038,
+    "ctr_ci_lower": 0.036328,
+    "ctr_ci_upper": 0.039772,
     "beta_alpha": 1901,
     "beta_beta": 48199
   }

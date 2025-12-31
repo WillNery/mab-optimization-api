@@ -33,7 +33,6 @@ class TestExperimentEndpoints:
             "name": sample_experiment_data["name"],
             "description": sample_experiment_data["description"],
             "status": "active",
-            "optimization_target": "ctr",
             "variants": [
                 {"id": "var_001", "name": "control", "is_control": True, "created_at": utc_now()},
                 {"id": "var_002", "name": "variant_a", "is_control": False, "created_at": utc_now()},
@@ -94,7 +93,6 @@ class TestExperimentEndpoints:
             "name": "test_experiment",
             "description": "Test",
             "status": "active",
-            "optimization_target": "ctr",
             "variants": [
                 {"id": "var_001", "name": "control", "is_control": True, "created_at": utc_now()},
             ],

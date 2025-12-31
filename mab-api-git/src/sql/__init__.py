@@ -79,8 +79,7 @@ class MetricsQueries:
             INSERT (id, variant_id, metric_date, impressions, clicks)
             VALUES (source.id, source.variant_id, source.metric_date, source.impressions, source.clicks)
     """
-    
-    """Query que alimenta o TS"""
+
     SELECT_FOR_ALLOCATION = """
         WITH aggregated AS (
             SELECT 
@@ -129,4 +128,87 @@ class MetricsQueries:
         JOIN variants v ON v.id = m.variant_id
         WHERE v.experiment_id = %(experiment_id)s
         ORDER BY m.metric_date DESC, v.is_control DESC, v.name
+    """
+
+
+class AllocationHistoryQueries:
+    """SQL queries for allocation history."""
+
+    INSERT_HISTORY = """
+        INSERT INTO allocation_history (
+            id, experiment_id, computed_at, window_days, 
+            algorithm, algorithm_version, seed, used_fallback,
+            total_impressions, total_clicks
+        )
+        VALUES (
+            %(id)s, %(experiment_id)s, %(computed_at)s, %(window_days)s,
+            %(algorithm)s, %(algorithm_version)s, %(seed)s, %(used_fallback)s,
+            %(total_impressions)s, %(total_clicks)s
+        )
+    """
+
+    INSERT_DETAIL = """
+        INSERT INTO allocation_history_details (
+            id, allocation_history_id, variant_id, variant_name,
+            is_control, allocation_percentage, impressions, clicks,
+            ctr, beta_alpha, beta_beta
+        )
+        VALUES (
+            %(id)s, %(allocation_history_id)s, %(variant_id)s, %(variant_name)s,
+            %(is_control)s, %(allocation_percentage)s, %(impressions)s, %(clicks)s,
+            %(ctr)s, %(beta_alpha)s, %(beta_beta)s
+        )
+    """
+
+    SELECT_BY_EXPERIMENT = """
+        SELECT 
+            h.id,
+            h.experiment_id,
+            h.computed_at,
+            h.window_days,
+            h.algorithm,
+            h.algorithm_version,
+            h.seed,
+            h.used_fallback,
+            h.total_impressions,
+            h.total_clicks
+        FROM allocation_history h
+        WHERE h.experiment_id = %(experiment_id)s
+        ORDER BY h.computed_at DESC
+        LIMIT %(limit)s
+    """
+
+    SELECT_DETAILS_BY_HISTORY = """
+        SELECT 
+            d.variant_id,
+            d.variant_name,
+            d.is_control,
+            d.allocation_percentage,
+            d.impressions,
+            d.clicks,
+            d.ctr,
+            d.beta_alpha,
+            d.beta_beta
+        FROM allocation_history_details d
+        WHERE d.allocation_history_id = %(allocation_history_id)s
+        ORDER BY d.is_control DESC, d.allocation_percentage DESC
+    """
+
+    SELECT_BY_DATE = """
+        SELECT 
+            h.id,
+            h.experiment_id,
+            h.computed_at,
+            h.window_days,
+            h.algorithm,
+            h.algorithm_version,
+            h.seed,
+            h.used_fallback,
+            h.total_impressions,
+            h.total_clicks
+        FROM allocation_history h
+        WHERE h.experiment_id = %(experiment_id)s
+          AND DATE(h.computed_at) = %(target_date)s
+        ORDER BY h.computed_at DESC
+        LIMIT 1
     """

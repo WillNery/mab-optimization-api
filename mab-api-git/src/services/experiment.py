@@ -37,7 +37,7 @@ class ExperimentService:
             name=data.name,
             description=data.description,
             variants=variants,
-            optimization_target=data.optimization_target,
+            optimization_target=data.optimization_target.value,
         )
 
         return ExperimentResponse(
@@ -134,10 +134,15 @@ class ExperimentService:
                 metric_date=data.date,
                 impressions=metric.impressions,
                 clicks=metric.clicks,
+                sessions=metric.sessions,
+                revenue=metric.revenue,
+                source=data.source,
+                batch_id=data.batch_id,
             )
 
         return MetricsResponse(
             message="Metrics recorded successfully",
             date=data.date,
             variants_updated=len(data.metrics),
+            batch_id=data.batch_id,
         )

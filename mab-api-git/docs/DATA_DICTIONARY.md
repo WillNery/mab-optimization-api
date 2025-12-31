@@ -305,56 +305,6 @@ WHERE received_at >= DATEADD(day, -120, CURRENT_DATE());
 
 ---
 
-## Consultas de Auditoria
-
-### Por que variante X recebeu Y% no dia Z?
-
-```sql
-SELECT 
-    computed_at,
-    algorithm,
-    algorithm_version,
-    seed,
-    window_days,
-    used_fallback,
-    allocations
-FROM allocation_history
-WHERE experiment_id = 'abc-123'
-  AND DATE(computed_at) = '2025-01-15';
-```
-
-### Extrair detalhes do JSON
-
-```sql
-SELECT 
-    computed_at,
-    f.value:variant_name::STRING AS variant_name,
-    f.value:allocation_percentage::FLOAT AS allocation_pct,
-    f.value:impressions::INT AS impressions,
-    f.value:clicks::INT AS clicks,
-    f.value:ctr::FLOAT AS ctr
-FROM allocation_history,
-LATERAL FLATTEN(input => allocations) f
-WHERE experiment_id = 'abc-123'
-  AND DATE(computed_at) = '2025-01-15';
-```
-
-### Histórico de alocações de um experimento
-
-```sql
-SELECT 
-    DATE(computed_at) as date,
-    f.value:variant_name::STRING AS variant_name,
-    f.value:allocation_percentage::FLOAT AS allocation_pct
-FROM allocation_history,
-LATERAL FLATTEN(input => allocations) f
-WHERE experiment_id = 'abc-123'
-ORDER BY computed_at DESC
-LIMIT 100;
-```
-
----
-
 ## Diferença entre raw_metrics e daily_metrics
 
 | Aspecto | raw_metrics | daily_metrics |

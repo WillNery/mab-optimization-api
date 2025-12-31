@@ -5,18 +5,18 @@ class ExperimentQueries:
     """SQL queries for experiments."""
 
     INSERT = """
-        INSERT INTO experiments (id, name, description, status, optimization_target)
-        VALUES (%(id)s, %(name)s, %(description)s, %(status)s, %(optimization_target)s)
+        INSERT INTO experiments (id, name, description, status)
+        VALUES (%(id)s, %(name)s, %(description)s, %(status)s)
     """
 
     SELECT_BY_ID = """
-        SELECT id, name, description, status, optimization_target, created_at, updated_at
+        SELECT id, name, description, status, created_at, updated_at
         FROM experiments
         WHERE id = %(id)s
     """
 
     SELECT_BY_NAME = """
-        SELECT id, name, description, status, optimization_target, created_at, updated_at
+        SELECT id, name, description, status, created_at, updated_at
         FROM experiments
         WHERE name = %(name)s
     """
@@ -90,10 +90,8 @@ class MetricsQueries:
                 v.id AS variant_id,
                 v.name AS variant_name,
                 v.is_control,
-                COALESCE(SUM(m.sessions), 0) AS sessions,
                 COALESCE(SUM(m.impressions), 0) AS impressions,
-                COALESCE(SUM(m.clicks), 0) AS clicks,
-                COALESCE(SUM(m.revenue), 0) AS revenue
+                COALESCE(SUM(m.clicks), 0) AS clicks
             FROM variants v
             LEFT JOIN daily_metrics m 
                 ON m.variant_id = v.id
@@ -106,22 +104,12 @@ class MetricsQueries:
             variant_id,
             variant_name,
             is_control,
-            sessions,
             impressions,
             clicks,
-            revenue,
             CASE 
                 WHEN impressions > 0 THEN clicks / impressions 
                 ELSE 0 
             END AS ctr,
-            CASE 
-                WHEN sessions > 0 THEN revenue / sessions 
-                ELSE 0 
-            END AS rps,
-            CASE 
-                WHEN impressions > 0 THEN (revenue / impressions) * 1000 
-                ELSE 0 
-            END AS rpm,
             clicks + %(prior_alpha)s AS beta_alpha,
             impressions - clicks + %(prior_beta)s AS beta_beta
         FROM aggregated
@@ -134,22 +122,12 @@ class MetricsQueries:
             v.id AS variant_id,
             v.name AS variant_name,
             v.is_control,
-            m.sessions,
             m.impressions,
             m.clicks,
-            m.revenue,
             CASE 
                 WHEN m.impressions > 0 THEN m.clicks / m.impressions 
                 ELSE 0 
-            END AS ctr,
-            CASE 
-                WHEN m.sessions > 0 THEN m.revenue / m.sessions 
-                ELSE 0 
-            END AS rps,
-            CASE 
-                WHEN m.impressions > 0 THEN (m.revenue / m.impressions) * 1000 
-                ELSE 0 
-            END AS rpm
+            END AS ctr
         FROM daily_metrics m
         JOIN variants v ON v.id = m.variant_id
         WHERE v.experiment_id = %(experiment_id)s

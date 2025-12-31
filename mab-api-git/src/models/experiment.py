@@ -1,17 +1,9 @@
 """Pydantic models for experiments and variants."""
 
 from datetime import datetime
-from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field, model_validator
-
-
-class OptimizationTarget(str, Enum):
-    """Valid optimization targets."""
-    ctr = "ctr"
-    rps = "rps"
-    rpm = "rpm"
 
 
 class VariantCreate(BaseModel):
@@ -44,10 +36,6 @@ class ExperimentCreate(BaseModel):
 
     name: str = Field(..., min_length=1, max_length=255, description="Experiment name")
     description: Optional[str] = Field(None, description="Experiment description")
-    optimization_target: OptimizationTarget = Field(
-        default=OptimizationTarget.ctr,
-        description="Metric to optimize: ctr, rps, or rpm"
-    )
     variants: list[VariantCreate] = Field(
         ..., min_length=2, description="List of variants (minimum 2)"
     )
@@ -74,7 +62,6 @@ class ExperimentCreate(BaseModel):
                 {
                     "name": "homepage_cta_test",
                     "description": "Testing CTA button variants on homepage",
-                    "optimization_target": "ctr",
                     "variants": [
                         {"name": "control", "is_control": True},
                         {"name": "variant_a", "is_control": False},
@@ -93,7 +80,6 @@ class ExperimentResponse(BaseModel):
     name: str
     description: Optional[str]
     status: str
-    optimization_target: str = "ctr"
     variants: list[VariantResponse]
     created_at: datetime
     updated_at: datetime

@@ -10,7 +10,7 @@ from src.models.allocation import AllocationResponse
 from src.services.experiment import ExperimentService
 from src.services.allocation import AllocationService
 from src.config import settings
-from src.rate_limit import check_daily_allocation_limit
+from src.rate_limit import check_daily_allocation_limit, daily_allocation_limit
 
 router = APIRouter(prefix="/experiments", tags=["Experiments"])
 
@@ -140,7 +140,7 @@ async def get_allocation(
     - 3000 requests per day (cost protection)
     """
     # Check daily limit first (cost protection)
-    check_daily_allocation_limit()
+    remaining = check_daily_allocation_limit()
     
     # Check experiment status
     experiment = ExperimentService.get_experiment(experiment_id)
@@ -157,6 +157,11 @@ async def get_allocation(
     result = service.get_allocation(experiment_id, window_days)
     if not result:
         raise HTTPException(status_code=404, detail="Experiment not found")
+    
+    # Add daily limit info to response headers would be nice, 
+    # but FastAPI doesn't support that easily in response_model
+    # The info is logged instead
+    
     return result
 
 
@@ -185,4 +190,25 @@ async def get_history(experiment_id: str):
         "experiment_id": experiment_id,
         "experiment_name": experiment["name"],
         "history": history,
+    }
+
+
+@router.get(
+    "/limits/daily",
+    summary="Get Daily Limits",
+    description="Get current daily allocation limit status",
+    include_in_schema=True,
+)
+async def get_daily_limits():
+    """
+    Get current daily allocation limit status.
+    
+    Useful for monitoring and dashboards.
+    """
+    return {
+        "allocation_limit": {
+            "max_per_day": daily_allocation_limit.max_per_day,
+            "remaining": daily_allocation_limit.remaining(),
+            "used": daily_allocation_limit.max_per_day - daily_allocation_limit.remaining(),
+        }
     }

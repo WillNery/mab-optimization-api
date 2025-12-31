@@ -1,7 +1,8 @@
 """Thompson Sampling implementation for Multi-Armed Bandit."""
 
+import hashlib
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, date
 import time
 from typing import Optional
 
@@ -11,12 +12,16 @@ from scipy import stats
 from src.config import settings
 from src.repositories.experiment import ExperimentRepository
 from src.repositories.metrics import MetricsRepository
+from src.repositories.allocation_history import AllocationHistoryRepository
 from src.models.allocation import (
     AllocationResponse,
     VariantAllocation,
     VariantMetrics,
 )
 from src.logging_config import log_algorithm
+
+# Algorithm version - increment when logic changes
+ALGORITHM_VERSION = "1.0.0"
 
 
 @dataclass
@@ -31,6 +36,25 @@ class VariantData:
     ctr: float
     beta_alpha: int
     beta_beta: int
+
+
+def generate_deterministic_seed(experiment_id: str, target_date: date) -> int:
+    """
+    Generate a deterministic seed based on experiment and date.
+    
+    Same experiment + same date = same seed = same results.
+    Different date = different seed = allocation can evolve.
+    
+    Args:
+        experiment_id: Experiment UUID
+        target_date: Date for the seed
+        
+    Returns:
+        Integer seed for numpy random
+    """
+    seed_str = f"{experiment_id}_{target_date.isoformat()}"
+    seed_hash = hashlib.sha256(seed_str.encode()).hexdigest()
+    return int(seed_hash, 16) % (2**32)
 
 
 class ThompsonSamplingEngine:
@@ -66,7 +90,11 @@ class ThompsonSamplingEngine:
         self.prior_alpha = prior_alpha or settings.prior_alpha
         self.prior_beta = prior_beta or settings.prior_beta
 
-    def calculate_allocation(self, variants: list[VariantData]) -> dict[str, float]:
+    def calculate_allocation(
+        self,
+        variants: list[VariantData],
+        seed: int | None = None,
+    ) -> dict[str, float]:
         """
         Calculate traffic allocation using Thompson Sampling.
         
@@ -77,12 +105,17 @@ class ThompsonSamplingEngine:
         
         Args:
             variants: List of variant data with beta parameters
+            seed: Random seed for reproducibility (optional)
             
         Returns:
             Dict mapping variant_name to allocation percentage
         """
         if not variants:
             return {}
+
+        # Set seed for reproducibility
+        if seed is not None:
+            np.random.seed(seed)
 
         # Handle case with no data - return uniform allocation
         total_impressions = sum(v.impressions for v in variants)
@@ -140,6 +173,7 @@ class AllocationService:
         self,
         experiment_id: str,
         window_days: int | None = None,
+        save_history: bool = True,
     ) -> Optional[AllocationResponse]:
         """
         Get optimized traffic allocation for an experiment.
@@ -148,15 +182,19 @@ class AllocationService:
         1. Collect metrics from last `window_days` days (default 14)
         2. If any variant has < MIN_IMPRESSIONS, expand window to max (30 days)
         3. If still < MIN_IMPRESSIONS, use fallback (prior only)
+        4. Use deterministic seed for reproducibility
+        5. Save result to allocation_history
         
         Args:
             experiment_id: Experiment UUID
             window_days: Number of days to look back (default: 14)
+            save_history: Whether to save to allocation_history (default: True)
             
         Returns:
             Allocation response or None if experiment not found
         """
         start_time = time.time()
+        computed_at = datetime.utcnow()
         
         if window_days is None:
             window_days = self.default_window
@@ -213,8 +251,11 @@ class AllocationService:
             for m in metrics_data
         ]
 
-        # Calculate allocation
-        allocations = self.engine.calculate_allocation(variants)
+        # Generate deterministic seed
+        seed = generate_deterministic_seed(experiment_id, computed_at.date())
+
+        # Calculate allocation with seed
+        allocations = self.engine.calculate_allocation(variants, seed=seed)
 
         # Build response
         variant_allocations = []
@@ -238,14 +279,50 @@ class AllocationService:
         )
 
         # Build algorithm description
-        algorithm_desc = "thompson_sampling"
+        algorithm_name = "thompson_sampling"
+        algorithm_desc = algorithm_name
         if used_fallback:
             algorithm_desc += " (fallback: prior only)"
+
+        # Save to history
+        if save_history:
+            try:
+                AllocationHistoryRepository.save_allocation(
+                    experiment_id=experiment_id,
+                    computed_at=computed_at,
+                    window_days=actual_window,
+                    algorithm=algorithm_name,
+                    algorithm_version=ALGORITHM_VERSION,
+                    seed=seed,
+                    used_fallback=used_fallback,
+                    variants=[
+                        {
+                            "variant_id": v.variant_id,
+                            "variant_name": v.variant_name,
+                            "is_control": v.is_control,
+                            "allocation_percentage": allocations.get(v.variant_name, 0.0),
+                            "impressions": v.impressions,
+                            "clicks": v.clicks,
+                            "ctr": v.ctr,
+                            "beta_alpha": v.beta_alpha,
+                            "beta_beta": v.beta_beta,
+                        }
+                        for v in variants
+                    ],
+                )
+            except Exception as e:
+                # Log but don't fail the request if history save fails
+                from src.logging_config import log_error
+                log_error(
+                    message=f"Failed to save allocation history: {e}",
+                    error_type="allocation_history_save",
+                    experiment_id=experiment_id,
+                )
 
         # Log algorithm execution
         duration_ms = (time.time() - start_time) * 1000
         log_algorithm(
-            algorithm="thompson_sampling",
+            algorithm=algorithm_name,
             experiment_id=experiment_id,
             duration_ms=duration_ms,
             n_samples=self.engine.n_samples,
@@ -253,12 +330,14 @@ class AllocationService:
             total_impressions=sum(v.impressions for v in variants),
             window_days=actual_window,
             used_fallback=used_fallback,
+            seed=seed,
+            algorithm_version=ALGORITHM_VERSION,
         )
 
         return AllocationResponse(
             experiment_id=experiment_id,
             experiment_name=experiment["name"],
-            computed_at=datetime.utcnow(),
+            computed_at=computed_at,
             algorithm=algorithm_desc,
             window_days=actual_window,
             allocations=variant_allocations,

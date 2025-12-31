@@ -28,6 +28,7 @@ class TestExperimentEndpoints:
             "name": sample_experiment_data["name"],
             "description": sample_experiment_data["description"],
             "status": "active",
+            "optimization_target": "ctr",
             "variants": [
                 {"id": "var_001", "name": "control", "is_control": True, "created_at": datetime.utcnow()},
                 {"id": "var_002", "name": "variant_a", "is_control": False, "created_at": datetime.utcnow()},
@@ -88,6 +89,7 @@ class TestExperimentEndpoints:
             "name": "test_experiment",
             "description": "Test",
             "status": "active",
+            "optimization_target": "ctr",
             "variants": [
                 {"id": "var_001", "name": "control", "is_control": True, "created_at": datetime.utcnow()},
             ],
@@ -121,6 +123,7 @@ class TestMetricsEndpoints:
         """Should record metrics successfully."""
         mock_exp_repo.get_experiment_by_id.return_value = {
             "id": "exp_123",
+            "status": "active",
             "variants": [
                 {"id": "var_001", "name": "control"},
                 {"id": "var_002", "name": "variant_a"},
@@ -149,6 +152,7 @@ class TestMetricsEndpoints:
         """Should return 400 for non-existent variant."""
         mock_repo.get_experiment_by_id.return_value = {
             "id": "exp_123",
+            "status": "active",
             "variants": [
                 {"id": "var_001", "name": "control"},
             ],
@@ -183,13 +187,24 @@ class TestMetricsEndpoints:
 class TestAllocationEndpoints:
     """Tests for allocation endpoints."""
 
+    @patch("src.services.allocation.AllocationHistoryRepository")
     @patch("src.services.allocation.MetricsRepository")
     @patch("src.services.allocation.ExperimentRepository")
-    def test_get_allocation_success(self, mock_exp_repo, mock_metrics_repo, client):
+    @patch("src.routers.experiments.ExperimentService")
+    def test_get_allocation_success(
+        self, mock_service, mock_exp_repo, mock_metrics_repo, mock_history_repo, client
+    ):
         """Should return allocation successfully."""
+        # Mock para verificação de status no router
+        mock_experiment = MagicMock()
+        mock_experiment.status = "active"
+        mock_service.get_experiment.return_value = mock_experiment
+        
+        # Mock para o repository usado pelo service
         mock_exp_repo.get_experiment_by_id.return_value = {
             "id": "exp_123",
             "name": "test_experiment",
+            "status": "active",
         }
         mock_metrics_repo.get_metrics_for_allocation.return_value = [
             {
@@ -200,7 +215,7 @@ class TestAllocationEndpoints:
                 "clicks": 320,
                 "ctr": 0.032,
                 "beta_alpha": 321,
-                "beta_beta": 9681,
+                "beta_beta": 9779,
             },
             {
                 "variant_id": "var_002",
@@ -210,9 +225,10 @@ class TestAllocationEndpoints:
                 "clicks": 450,
                 "ctr": 0.045,
                 "beta_alpha": 451,
-                "beta_beta": 9551,
+                "beta_beta": 9649,
             },
         ]
+        mock_history_repo.save_allocation.return_value = "history_123"
 
         response = client.get("/experiments/exp_123/allocation")
 
@@ -225,41 +241,43 @@ class TestAllocationEndpoints:
         total = sum(a["allocation_percentage"] for a in data["allocations"])
         assert abs(total - 100) < 0.2
 
-    @patch("src.services.allocation.ExperimentRepository")
-    def test_get_allocation_not_found(self, mock_repo, client):
+    @patch("src.routers.experiments.ExperimentService")
+    def test_get_allocation_not_found(self, mock_service, client):
         """Should return 404 for non-existent experiment."""
-        mock_repo.get_experiment_by_id.return_value = None
+        mock_service.get_experiment.return_value = None
 
         response = client.get("/experiments/nonexistent/allocation")
 
         assert response.status_code == 404
 
+    @patch("src.routers.experiments.ExperimentService")
+    def test_get_allocation_experiment_not_active(self, mock_service, client):
+        """Should return 400 for non-active experiment."""
+        mock_experiment = MagicMock()
+        mock_experiment.status = "paused"
+        mock_service.get_experiment.return_value = mock_experiment
+
+        response = client.get("/experiments/exp_123/allocation")
+
+        assert response.status_code == 400
+        assert "paused" in response.json()["detail"]
+
+    @patch("src.services.allocation.AllocationHistoryRepository")
     @patch("src.services.allocation.MetricsRepository")
     @patch("src.services.allocation.ExperimentRepository")
+    @patch("src.routers.experiments.ExperimentService")
     def test_get_allocation_with_window_days(
-        self, mock_exp_repo, mock_metrics_repo, client
+        self, mock_service, mock_exp_repo, mock_metrics_repo, mock_history_repo, client
     ):
         """Should accept custom window_days parameter."""
+        mock_experiment = MagicMock()
+        mock_experiment.status = "active"
+        mock_service.get_experiment.return_value = mock_experiment
+        
         mock_exp_repo.get_experiment_by_id.return_value = {
             "id": "exp_123",
             "name": "test_experiment",
-        }
-        mock_metrics_repo.get_metrics_for_allocation.return_value = []
-
-        response = client.get("/experiments/exp_123/allocation?window_days=7")
-
-        assert response.status_code == 200
-        assert response.json()["window_days"] == 7
-
-    @patch("src.services.allocation.MetricsRepository")
-    @patch("src.services.allocation.ExperimentRepository")
-    def test_get_allocation_no_data_uniform(
-        self, mock_exp_repo, mock_metrics_repo, client
-    ):
-        """Should return uniform allocation when no data."""
-        mock_exp_repo.get_experiment_by_id.return_value = {
-            "id": "exp_123",
-            "name": "test_experiment",
+            "status": "active",
         }
         mock_metrics_repo.get_metrics_for_allocation.return_value = [
             {
@@ -270,7 +288,43 @@ class TestAllocationEndpoints:
                 "clicks": 0,
                 "ctr": 0,
                 "beta_alpha": 1,
-                "beta_beta": 1,
+                "beta_beta": 99,
+            },
+        ]
+
+        response = client.get("/experiments/exp_123/allocation?window_days=7")
+
+        assert response.status_code == 200
+        # Window might be expanded due to insufficient data
+        assert response.json()["window_days"] >= 7
+
+    @patch("src.services.allocation.AllocationHistoryRepository")
+    @patch("src.services.allocation.MetricsRepository")
+    @patch("src.services.allocation.ExperimentRepository")
+    @patch("src.routers.experiments.ExperimentService")
+    def test_get_allocation_no_data_uniform(
+        self, mock_service, mock_exp_repo, mock_metrics_repo, mock_history_repo, client
+    ):
+        """Should return uniform allocation when no data."""
+        mock_experiment = MagicMock()
+        mock_experiment.status = "active"
+        mock_service.get_experiment.return_value = mock_experiment
+        
+        mock_exp_repo.get_experiment_by_id.return_value = {
+            "id": "exp_123",
+            "name": "test_experiment",
+            "status": "active",
+        }
+        mock_metrics_repo.get_metrics_for_allocation.return_value = [
+            {
+                "variant_id": "var_001",
+                "variant_name": "control",
+                "is_control": True,
+                "impressions": 0,
+                "clicks": 0,
+                "ctr": 0,
+                "beta_alpha": 1,
+                "beta_beta": 99,
             },
             {
                 "variant_id": "var_002",
@@ -280,7 +334,7 @@ class TestAllocationEndpoints:
                 "clicks": 0,
                 "ctr": 0,
                 "beta_alpha": 1,
-                "beta_beta": 1,
+                "beta_beta": 99,
             },
         ]
 

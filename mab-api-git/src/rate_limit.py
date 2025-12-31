@@ -6,6 +6,7 @@ from datetime import date
 from typing import Callable
 
 from fastapi import HTTPException, Request, Response
+from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.logging_config import logger
@@ -232,13 +233,17 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
                     "window_seconds": config["window_seconds"],
                 },
             )
-            raise HTTPException(
+            # Retornar JSONResponse em vez de levantar HTTPException
+            # porque BaseHTTPMiddleware não propaga HTTPException corretamente
+            return JSONResponse(
                 status_code=429,
-                detail={
-                    "error": "Rate limit exceeded",
-                    "limit": config["max_requests"],
-                    "window_seconds": config["window_seconds"],
-                    "retry_after": reset,
+                content={
+                    "detail": {
+                        "error": "Rate limit exceeded",
+                        "limit": config["max_requests"],
+                        "window_seconds": config["window_seconds"],
+                        "retry_after": reset,
+                    }
                 },
                 headers={
                     "X-RateLimit-Limit": str(config["max_requests"]),

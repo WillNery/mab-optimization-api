@@ -8,8 +8,6 @@ erDiagram
     experiments ||--o{ allocation_history : "has"
     variants ||--o{ raw_metrics : "has"
     variants ||--o{ daily_metrics : "has"
-    allocation_history ||--o{ allocation_history_details : "has"
-    variants ||--o{ allocation_history_details : "has"
 
     experiments {
         varchar_36 id PK
@@ -65,21 +63,8 @@ erDiagram
         boolean used_fallback
         bigint total_impressions
         bigint total_clicks
+        variant allocations
         timestamp_ntz created_at
-    }
-
-    allocation_history_details {
-        varchar_36 id PK
-        varchar_36 allocation_history_id FK
-        varchar_36 variant_id FK
-        varchar_100 variant_name
-        boolean is_control
-        float allocation_percentage
-        bigint impressions
-        bigint clicks
-        float ctr
-        float beta_alpha
-        float beta_beta
     }
 ```
 
@@ -93,8 +78,6 @@ erDiagram
 | experiments | allocation_history | 1:N | Um experimento tem N registros de alocação |
 | variants | raw_metrics | 1:N | Uma variante tem N registros de métricas brutas |
 | variants | daily_metrics | 1:N | Uma variante tem N registros de métricas diárias |
-| allocation_history | allocation_history_details | 1:N | Uma alocação tem N detalhes (um por variante) |
-| variants | allocation_history_details | 1:N | Uma variante aparece em N históricos de alocação |
 
 ---
 
@@ -114,9 +97,6 @@ erDiagram
 | daily_metrics | uq_daily_metrics_variant_date | UNIQUE | (variant_id, metric_date) |
 | allocation_history | PK | PRIMARY KEY | id |
 | allocation_history | fk_allocation_history_experiment | FOREIGN KEY | experiment_id → experiments.id |
-| allocation_history_details | PK | PRIMARY KEY | id |
-| allocation_history_details | fk_allocation_detail_history | FOREIGN KEY | allocation_history_id → allocation_history.id |
-| allocation_history_details | fk_allocation_detail_variant | FOREIGN KEY | variant_id → variants.id |
 
 ---
 
@@ -207,19 +187,7 @@ erDiagram
               │  algorithm_version│
               │  seed             │
               │  used_fallback    │
-              └─────────┬─────────┘
-                        │ 1:N
-                        ▼
-              ┌───────────────────┐
-              │allocation_history │
-              │    _details       │
-              │                   │
-              │  variant_id       │
-              │  allocation_%     │
-              │  impressions      │
-              │  clicks           │
-              │  beta_alpha       │
-              │  beta_beta        │
+              │  allocations (JSON)
               └───────────────────┘
 ```
 
@@ -234,7 +202,6 @@ erDiagram
 | **raw_metrics** | POST /metrics | Auditoria/Debug | Backup append-only, rastreabilidade |
 | **daily_metrics** | POST /metrics | GET /allocation | Dados limpos para cálculo do algoritmo |
 | **allocation_history** | GET /allocation | SQL direto | Auditoria de decisões de alocação |
-| **allocation_history_details** | GET /allocation | SQL direto | Detalhes por variante de cada decisão |
 
 ---
 
@@ -255,6 +222,38 @@ erDiagram
 | `algorithm_version` | Identifica qual versão do algoritmo foi usada |
 | `used_fallback` | Indica se usou prior por falta de dados |
 | `window_days` | Janela temporal usada no cálculo |
+| `allocations` | JSON com detalhes de cada variante |
+
+---
+
+## Estrutura do JSON `allocations`
+
+```json
+[
+  {
+    "variant_id": "v1",
+    "variant_name": "control",
+    "is_control": true,
+    "allocation_percentage": 15.2,
+    "impressions": 50000,
+    "clicks": 1600,
+    "ctr": 0.032,
+    "beta_alpha": 1601,
+    "beta_beta": 48499
+  },
+  {
+    "variant_id": "v2",
+    "variant_name": "variant_a",
+    "is_control": false,
+    "allocation_percentage": 84.8,
+    "impressions": 50000,
+    "clicks": 1900,
+    "ctr": 0.038,
+    "beta_alpha": 1901,
+    "beta_beta": 48199
+  }
+]
+```
 
 ---
 

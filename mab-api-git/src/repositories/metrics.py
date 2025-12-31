@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import date
+from decimal import Decimal
 
 from src.repositories.database import execute_query, get_connection
 from src.sql import MetricsQueries
@@ -17,6 +18,10 @@ class MetricsRepository:
         metric_date: date,
         impressions: int,
         clicks: int,
+        sessions: int = 0,
+        revenue: Decimal = Decimal("0"),
+        source: str = "api",
+        batch_id: str | None = None,
     ) -> None:
         """
         Insert metrics into both raw and daily tables.
@@ -29,6 +34,10 @@ class MetricsRepository:
             metric_date: Date of the metrics
             impressions: Number of impressions
             clicks: Number of clicks
+            sessions: Number of unique sessions
+            revenue: Revenue in USD
+            source: Origin of the data (api, gam, cdp, manual)
+            batch_id: Batch ID for traceability
         """
         raw_id = str(uuid.uuid4())
         daily_id = str(uuid.uuid4())
@@ -43,8 +52,12 @@ class MetricsRepository:
                         "id": raw_id,
                         "variant_id": variant_id,
                         "metric_date": metric_date,
+                        "sessions": sessions,
                         "impressions": impressions,
                         "clicks": clicks,
+                        "revenue": float(revenue),
+                        "source": source,
+                        "batch_id": batch_id,
                     },
                 )
 
@@ -55,8 +68,10 @@ class MetricsRepository:
                         "id": daily_id,
                         "variant_id": variant_id,
                         "metric_date": metric_date,
+                        "sessions": sessions,
                         "impressions": impressions,
                         "clicks": clicks,
+                        "revenue": float(revenue),
                     },
                 )
 
@@ -93,6 +108,7 @@ class MetricsRepository:
                 "prior_alpha": settings.prior_alpha,
                 "prior_beta": settings.prior_beta,
             },
+            query_name="get_metrics_for_allocation",
         )
 
     @staticmethod
@@ -109,4 +125,5 @@ class MetricsRepository:
         return execute_query(
             MetricsQueries.SELECT_HISTORY,
             {"experiment_id": experiment_id},
+            query_name="get_metrics_history",
         )

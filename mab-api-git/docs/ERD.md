@@ -269,5 +269,5 @@ erDiagram
 | Target | Fórmula | Quando usar |
 |--------|---------|-------------|
 | `ctr` | clicks / impressions | Maximizar engajamento |
-| `rps` | revenue / sessions | Maximizar receita por usuário |
-| `rpm` | (revenue / impressions) × 1000 | Maximizar receita por inventário |
+| `rps` | revenue / sessions | Maximizar receita por sessão |
+| `rpm` | (revenue / impressions) × 1000 | Maximizar receita por impressão |

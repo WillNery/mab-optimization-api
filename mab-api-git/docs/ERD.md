@@ -5,8 +5,11 @@
 ```mermaid
 erDiagram
     experiments ||--o{ variants : "has"
+    experiments ||--o{ allocation_history : "has"
     variants ||--o{ raw_metrics : "has"
     variants ||--o{ daily_metrics : "has"
+    allocation_history ||--o{ allocation_history_details : "has"
+    variants ||--o{ allocation_history_details : "has"
 
     experiments {
         varchar_36 id PK
@@ -50,6 +53,34 @@ erDiagram
         timestamp_ntz created_at
         timestamp_ntz updated_at
     }
+
+    allocation_history {
+        varchar_36 id PK
+        varchar_36 experiment_id FK
+        timestamp_ntz computed_at
+        integer window_days
+        varchar_50 algorithm
+        varchar_20 algorithm_version
+        bigint seed
+        boolean used_fallback
+        bigint total_impressions
+        bigint total_clicks
+        timestamp_ntz created_at
+    }
+
+    allocation_history_details {
+        varchar_36 id PK
+        varchar_36 allocation_history_id FK
+        varchar_36 variant_id FK
+        varchar_100 variant_name
+        boolean is_control
+        float allocation_percentage
+        bigint impressions
+        bigint clicks
+        float ctr
+        float beta_alpha
+        float beta_beta
+    }
 ```
 
 ---
@@ -59,8 +90,11 @@ erDiagram
 | De | Para | Cardinalidade | Descrição |
 |----|------|---------------|-----------|
 | experiments | variants | 1:N | Um experimento tem N variantes |
+| experiments | allocation_history | 1:N | Um experimento tem N registros de alocação |
 | variants | raw_metrics | 1:N | Uma variante tem N registros de métricas brutas |
 | variants | daily_metrics | 1:N | Uma variante tem N registros de métricas diárias |
+| allocation_history | allocation_history_details | 1:N | Uma alocação tem N detalhes (um por variante) |
+| variants | allocation_history_details | 1:N | Uma variante aparece em N históricos de alocação |
 
 ---
 
@@ -78,6 +112,11 @@ erDiagram
 | daily_metrics | PK | PRIMARY KEY | id |
 | daily_metrics | fk_daily_metrics_variant | FOREIGN KEY | variant_id → variants.id |
 | daily_metrics | uq_daily_metrics_variant_date | UNIQUE | (variant_id, metric_date) |
+| allocation_history | PK | PRIMARY KEY | id |
+| allocation_history | fk_allocation_history_experiment | FOREIGN KEY | experiment_id → experiments.id |
+| allocation_history_details | PK | PRIMARY KEY | id |
+| allocation_history_details | fk_allocation_detail_history | FOREIGN KEY | allocation_history_id → allocation_history.id |
+| allocation_history_details | fk_allocation_detail_variant | FOREIGN KEY | variant_id → variants.id |
 
 ---
 
@@ -87,6 +126,7 @@ erDiagram
 |--------|----------------|-----------|
 | raw_metrics | metric_date | Otimiza queries de auditoria por período |
 | daily_metrics | (variant_id, metric_date) | Otimiza query do Thompson Sampling |
+| allocation_history | (experiment_id, computed_at) | Otimiza queries de auditoria por experimento/data |
 
 ---
 
@@ -95,7 +135,7 @@ erDiagram
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        POST /experiments                         │
-└─────────────────────────────┬───────────────────────────────────┘
+└─────────────────────────────────┬───────────────────────────────┘
                               │
                               ▼
                     ┌───────────────────┐
@@ -105,7 +145,7 @@ erDiagram
                     │  name (UK)        │
                     │  description      │
                     │  status           │
-                    │  optimization_target  ← NEW
+                    │  optimization_target
                     │  created_at       │
                     │  updated_at       │
                     └─────────┬─────────┘
@@ -131,10 +171,10 @@ erDiagram
 │  id (PK)              │       │  id (PK)              │
 │  variant_id (FK)      │       │  variant_id (FK)      │
 │  metric_date          │       │  metric_date          │
-│  sessions      ← NEW  │       │  sessions      ← NEW  │
+│  sessions             │       │  sessions             │
 │  impressions (BIGINT) │       │  impressions (BIGINT) │
 │  clicks (BIGINT)      │       │  clicks (BIGINT)      │
-│  revenue       ← NEW  │       │  revenue       ← NEW  │
+│  revenue              │       │  revenue              │
 │  received_at          │       │  created_at           │
 │  source               │       │  updated_at           │
 │  batch_id             │       │                       │
@@ -154,6 +194,32 @@ erDiagram
               │ - CTR (clicks/imp)│
               │ - RPS (rev/sess)  │
               │ - RPM (rev/imp)   │
+              └─────────┬─────────┘
+                        │
+                        │ Salva automaticamente
+                        ▼
+              ┌───────────────────┐
+              │allocation_history │
+              │                   │
+              │  experiment_id    │
+              │  computed_at      │
+              │  algorithm        │
+              │  algorithm_version│
+              │  seed             │
+              │  used_fallback    │
+              └─────────┬─────────┘
+                        │ 1:N
+                        ▼
+              ┌───────────────────┐
+              │allocation_history │
+              │    _details       │
+              │                   │
+              │  variant_id       │
+              │  allocation_%     │
+              │  impressions      │
+              │  clicks           │
+              │  beta_alpha       │
+              │  beta_beta        │
               └───────────────────┘
 ```
 
@@ -167,6 +233,8 @@ erDiagram
 | **variants** | POST /experiments | GET /allocation | Cadastro das variantes |
 | **raw_metrics** | POST /metrics | Auditoria/Debug | Backup append-only, rastreabilidade |
 | **daily_metrics** | POST /metrics | GET /allocation | Dados limpos para cálculo do algoritmo |
+| **allocation_history** | GET /allocation | SQL direto | Auditoria de decisões de alocação |
+| **allocation_history_details** | GET /allocation | SQL direto | Detalhes por variante de cada decisão |
 
 ---
 
@@ -176,6 +244,17 @@ erDiagram
 |--------|---------|-----------|
 | `source` | 'api', 'gam', 'cdp', 'manual' | Identifica origem dos dados |
 | `batch_id` | UUID ou identificador | Rastreia qual job/ingestão enviou os dados |
+
+---
+
+## Colunas de Auditoria (allocation_history)
+
+| Coluna | Propósito |
+|--------|-----------|
+| `seed` | Permite reproduzir exatamente o mesmo resultado |
+| `algorithm_version` | Identifica qual versão do algoritmo foi usada |
+| `used_fallback` | Indica se usou prior por falta de dados |
+| `window_days` | Janela temporal usada no cálculo |
 
 ---
 

@@ -1,8 +1,16 @@
 """Pydantic models for allocation responses."""
 
 from datetime import datetime
+from typing import Optional
 
 from pydantic import BaseModel, Field
+
+
+class ConfidenceInterval(BaseModel):
+    """95% confidence interval."""
+    
+    lower: float = Field(..., description="Lower bound (2.5 percentile)")
+    upper: float = Field(..., description="Upper bound (97.5 percentile)")
 
 
 class VariantMetrics(BaseModel):
@@ -11,6 +19,9 @@ class VariantMetrics(BaseModel):
     impressions: int = Field(..., description="Total impressions in the window")
     clicks: int = Field(..., description="Total clicks in the window")
     ctr: float = Field(..., description="Click-through rate (clicks/impressions)")
+    ctr_ci: Optional[ConfidenceInterval] = Field(
+        default=None, description="95% confidence interval for CTR (Wilson Score)"
+    )
 
 
 class VariantAllocation(BaseModel):
@@ -54,6 +65,7 @@ class AllocationResponse(BaseModel):
                                 "impressions": 140000,
                                 "clicks": 4480,
                                 "ctr": 0.032,
+                                "ctr_ci": {"lower": 0.0311, "upper": 0.0329},
                             },
                         },
                         {
@@ -64,6 +76,7 @@ class AllocationResponse(BaseModel):
                                 "impressions": 140000,
                                 "clicks": 5880,
                                 "ctr": 0.042,
+                                "ctr_ci": {"lower": 0.0410, "upper": 0.0430},
                             },
                         },
                     ],

@@ -99,31 +99,10 @@ CREATE TABLE IF NOT EXISTS allocation_history (
     used_fallback BOOLEAN DEFAULT FALSE,
     total_impressions BIGINT NOT NULL,
     total_clicks BIGINT NOT NULL,
+    allocations VARIANT NOT NULL,
     created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
     CONSTRAINT fk_allocation_history_experiment 
         FOREIGN KEY (experiment_id) REFERENCES experiments(id)
-);
-
--- ============================================
--- Allocation History Details table
--- Per-variant allocation details
--- ============================================
-CREATE TABLE IF NOT EXISTS allocation_history_details (
-    id VARCHAR(36) PRIMARY KEY,
-    allocation_history_id VARCHAR(36) NOT NULL,
-    variant_id VARCHAR(36) NOT NULL,
-    variant_name VARCHAR(100) NOT NULL,
-    is_control BOOLEAN NOT NULL,
-    allocation_percentage FLOAT NOT NULL,
-    impressions BIGINT NOT NULL,
-    clicks BIGINT NOT NULL,
-    ctr FLOAT NOT NULL,
-    beta_alpha FLOAT NOT NULL,
-    beta_beta FLOAT NOT NULL,
-    CONSTRAINT fk_allocation_detail_history 
-        FOREIGN KEY (allocation_history_id) REFERENCES allocation_history(id),
-    CONSTRAINT fk_allocation_detail_variant 
-        FOREIGN KEY (variant_id) REFERENCES variants(id)
 );
 
 -- Index for fast history queries

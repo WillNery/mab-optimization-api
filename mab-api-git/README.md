@@ -182,7 +182,7 @@ Para publishers com receita média de R$ 30k/mês (~50.000+ impressões/dia), o 
 
 ### Requisitos
 
-- Python >=3.11, <3.13
+- Python >=3.11
 - Snowflake account
 
 ### Setup Local
@@ -209,7 +209,7 @@ cp .env.example .env
 
 ```bash
 # Executar scripts SQL
-snowsql -f infrastructure/snowflake/01_create_schema.sql
+snowsql -f infrastructure/snowflake/01_create_database.sql
 snowsql -f infrastructure/snowflake/02_create_tables.sql
 ```
 
@@ -346,7 +346,17 @@ Quando não há dados suficientes:
 }
 ```
 
-### 4. Histórico de Métricas
+### 4. Atualizar Status do Experimento
+
+```bash
+curl -X PATCH http://localhost:8000/experiments/{experiment_id}/status \
+  -H "Content-Type: application/json" \
+  -d '{"status": "paused"}'
+```
+
+Status válidos: `active`, `paused`, `completed`
+
+### 5. Histórico de Métricas
 
 ```bash
 curl http://localhost:8000/experiments/{experiment_id}/history
@@ -362,9 +372,16 @@ A API possui rate limiting para proteger contra abuso e garantir disponibilidade
 |----------|--------|-----|
 | POST /experiments | 10/min | Criação de experimentos |
 | POST /metrics | 100/min | Ingestão de métricas |
-| GET /allocation | 300/min | Consulta de alocação (job diário) |
+| GET /allocation | 300/min, 3000/dia | Consulta de alocação |
 | GET /history | 60/min | Consulta de histórico |
+| GET /experiments/{id} | 120/min | Consulta de experimento |
 | Default | 100/min | Outros endpoints |
+
+### Limite Diário de Alocação
+
+O endpoint `GET /allocation` possui um limite adicional de **3000 chamadas por dia** (reseta à meia-noite UTC). Isso existe porque cada chamada acorda o warehouse do Snowflake e executa simulação Monte Carlo, gerando custo.
+
+Para uso típico (1 experimento, 1 chamada/dia), esse limite é mais que suficiente.
 
 ### Headers de Resposta
 
@@ -476,6 +493,7 @@ mab-api/
 │   ├── DATA_DICTIONARY.md
 │   ├── ERD.md
 │   └── API.md
+├── .env.example
 ├── README.md
 └── pyproject.toml
 ```

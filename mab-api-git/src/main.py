@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from src.routers import health_router, experiments_router
 from src.config import settings
 from src.rate_limit import RateLimitMiddleware
+from src.middleware import RequestLoggingMiddleware
 
 # API metadata for documentation
 app = FastAPI(
@@ -19,8 +20,8 @@ API for optimizing A/B test traffic allocation using Multi-Armed Bandit algorith
 
 This API uses **Thompson Sampling** with a Beta-Bernoulli model to optimize CTR:
 
-- **Prior**: Beta(1, 1) - Uniform distribution (no prior knowledge)
-- **Posterior**: Beta(clicks + 1, impressions - clicks + 1)
+- **Prior**: Beta(1, 99) - Informative prior assuming ~1% CTR baseline
+- **Posterior**: Beta(α₀ + clicks, β₀ + impressions - clicks)
 - **Allocation**: Monte Carlo simulation to determine traffic split
 
 ## Workflow
@@ -60,14 +61,24 @@ Response headers include:
 )
 
 
-# Add rate limiting middleware
+# Add middlewares (order matters - first added is outermost)
 app.add_middleware(RateLimitMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
 
 
 # Exception handlers
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     """Handle unexpected errors."""
+    from src.logging_config import log_error
+    
+    log_error(
+        message=f"Unhandled exception: {str(exc)}",
+        error_type=type(exc).__name__,
+        path=request.url.path,
+        method=request.method,
+    )
+    
     return JSONResponse(
         status_code=500,
         content={"detail": "Internal server error", "type": type(exc).__name__},

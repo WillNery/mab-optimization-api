@@ -102,7 +102,10 @@ async def record_metrics(experiment_id: str, data: MetricsBatchRequest):
     try:
         return ExperimentService.record_metrics(experiment_id, data)
     except ValueError as e:
-        if "not found" in str(e).lower():
+        error_msg = str(e).lower()
+        # 404 apenas quando o erro começa com "experiment" (ex: "Experiment 'xxx' not found")
+        # 400 para outros erros como "Variant 'xxx' not found in experiment"
+        if error_msg.startswith("experiment") and "not found" in error_msg:
             raise HTTPException(status_code=404, detail=str(e))
         raise HTTPException(status_code=400, detail=str(e))
 

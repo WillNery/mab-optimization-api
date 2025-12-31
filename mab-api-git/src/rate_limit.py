@@ -2,6 +2,7 @@
 
 import time
 from collections import defaultdict
+from datetime import date
 from typing import Callable, Optional
 from functools import wraps
 
@@ -71,8 +72,51 @@ class RateLimiter:
         return True, remaining, window_seconds
 
 
-# Global rate limiter instance
+class DailyAllocationLimit:
+    """
+    Limite diário global para /allocation.
+    
+    Protege contra estouro de custo no Snowflake.
+    Cada GET /allocation acorda o warehouse e roda Monte Carlo.
+    
+    Default: 3000/dia
+    - ~2000 experimentos em operação normal
+    - ~1000 margem para retry/debug
+    """
+    
+    def __init__(self, max_per_day: int = 3000):
+        self.max_per_day = max_per_day
+        self._calls: dict[str, int] = {}
+    
+    def check(self) -> tuple[bool, int]:
+        """
+        Verifica se pode fazer mais uma chamada.
+        
+        Returns:
+            Tuple (is_allowed, remaining)
+        """
+        today = date.today().isoformat()
+        
+        # Limpa dias antigos
+        self._calls = {d: c for d, c in self._calls.items() if d == today}
+        
+        current = self._calls.get(today, 0)
+        if current >= self.max_per_day:
+            return False, 0
+        
+        self._calls[today] = current + 1
+        return self.max_per_day - current - 1
+    
+    def remaining(self) -> int:
+        """Retorna quantas chamadas ainda pode fazer hoje."""
+        today = date.today().isoformat()
+        self._calls = {d: c for d, c in self._calls.items() if d == today}
+        return self.max_per_day - self._calls.get(today, 0)
+
+
+# Global instances
 rate_limiter = RateLimiter()
+daily_allocation_limit = DailyAllocationLimit(max_per_day=3000)
 
 
 # Rate limit configurations per endpoint
@@ -120,6 +164,31 @@ def get_endpoint_pattern(request: Request) -> str:
 
     normalized_path = "/" + "/".join(normalized_parts)
     return f"{method} {normalized_path}"
+
+
+def check_daily_allocation_limit():
+    """
+    Verifica limite diário do /allocation.
+    Levanta HTTPException 429 se excedeu.
+    """
+    is_allowed, remaining = daily_allocation_limit.check()
+    
+    if not is_allowed:
+        logger.warning(
+            "Daily allocation limit exceeded",
+            extra={
+                "type": "daily_limit_exceeded",
+                "limit": daily_allocation_limit.max_per_day,
+            },
+        )
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "daily_allocation_limit_exceeded",
+                "limit": daily_allocation_limit.max_per_day,
+                "message": f"Limite diário de {daily_allocation_limit.max_per_day} cálculos atingido. Tente amanhã.",
+            },
+        )
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

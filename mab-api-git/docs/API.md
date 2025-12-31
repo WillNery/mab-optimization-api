@@ -473,30 +473,20 @@ Retorna histórico de métricas diárias.
       "variant_id": "194890c6-7b14-4431-8ed9-3d4dbd44262c",
       "variant_name": "control",
       "is_control": true,
-      "sessions": 5000,
       "impressions": 10000,
       "clicks": 320,
-      "revenue": 150.50,
       "ctr": 0.032,
-      "ctr_ci_lower": 0.0287,
-      "ctr_ci_upper": 0.0356,
-      "rps": 0.0301,
-      "rpm": 15.05
+      "ctr_ci": {"lower": 0.028742, "upper": 0.035562}
     },
     {
       "metric_date": "2025-01-15",
       "variant_id": "5c730ac2-64a1-4820-b80c-92b52b20c823",
       "variant_name": "variant_a",
       "is_control": false,
-      "sessions": 5200,
       "impressions": 10000,
       "clicks": 420,
-      "revenue": 185.75,
       "ctr": 0.042,
-      "ctr_ci_lower": 0.0383,
-      "ctr_ci_upper": 0.0460,
-      "rps": 0.0357,
-      "rpm": 18.575
+      "ctr_ci": {"lower": 0.038296, "upper": 0.046004}
     }
   ]
 }
@@ -845,10 +835,8 @@ RATE_LIMIT_DEFAULT_WINDOW=60
 
 | Métrica | Fórmula | Descrição |
 |---------|---------|-----------|
-| CTR | clicks ÷ impressions | Taxa de cliques |
+| CTR | clicks ÷ impressions | Taxa de cliques (usada para otimização) |
 | CTR CI 95% | Wilson Score Interval | Intervalo de confiança do CTR |
-| RPS | revenue ÷ sessions | Receita por sessão |
-| RPM | (revenue ÷ impressions) × 1000 | Receita por mil impressões |
 
 ### Intervalo de Confiança (Wilson Score)
 
@@ -857,13 +845,18 @@ O intervalo de confiança do CTR é calculado usando o método Wilson Score, mai
 ```
 z = 1.96 (95% confiança)
 
-lower = (p + z²/2n - z × √(p(1-p)/n + z²/4n²)) / (1 + z²/n)
-upper = (p + z²/2n + z × √(p(1-p)/n + z²/4n²)) / (1 + z²/n)
+center = (p + z²/2n) / (1 + z²/n)
+margin = z × √(p(1-p)/n + z²/4n²) / (1 + z²/n)
+
+lower = center - margin
+upper = center + margin
 
 onde:
   p = CTR observado (clicks/impressions)
   n = número de impressões
 ```
+
+> **Nota:** Sessions e revenue são aceitos no input para auditoria, mas não são usados na otimização.
 
 ---
 

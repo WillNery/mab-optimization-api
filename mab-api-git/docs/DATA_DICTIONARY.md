@@ -31,21 +31,12 @@ Armazena os experimentos A/B/N criados no sistema.
 | `name` | VARCHAR(255) | NOT NULL | - | Nome do experimento (único) |
 | `description` | TEXT | NULL | NULL | Descrição do experimento |
 | `status` | VARCHAR(20) | NOT NULL | 'active' | Status: 'active', 'paused', 'completed' |
-| `optimization_target` | VARCHAR(20) | NOT NULL | 'ctr' | Métrica a otimizar: 'ctr', 'rps', 'rpm' |
 | `created_at` | TIMESTAMP_NTZ | NOT NULL | CURRENT_TIMESTAMP() | Data/hora de criação |
 | `updated_at` | TIMESTAMP_NTZ | NOT NULL | CURRENT_TIMESTAMP() | Data/hora da última atualização |
 
 **Constraints:**
 - `PRIMARY KEY (id)`
 - `UNIQUE (name)`
-
-**Optimization Targets:**
-
-| Valor | Métrica | Fórmula |
-|-------|---------|---------|
-| `ctr` | Click-Through Rate | clicks / impressions |
-| `rps` | Revenue Per Session | revenue / sessions |
-| `rpm` | Revenue Per Mille | (revenue / impressions) × 1000 |
 
 ---
 
@@ -197,10 +188,7 @@ View que adiciona métricas calculadas aos dados diários.
 | `variant_name` | VARCHAR | Nome da variante |
 | `is_control` | BOOLEAN | Se é controle |
 | `experiment_name` | VARCHAR | Nome do experimento |
-| `optimization_target` | VARCHAR | Métrica sendo otimizada |
 | `ctr` | FLOAT | Click-Through Rate |
-| `rps` | FLOAT | Revenue Per Session |
-| `rpm` | FLOAT | Revenue Per Mille |
 
 ---
 
@@ -225,8 +213,6 @@ WHERE received_at >= DATEADD(day, -120, CURRENT_DATE());
                           ▼
                    ┌─────────────┐
                    │ experiments │
-                   │             │
-                   │ + optimization_target
                    └──────┬──────┘
                           │
                           ▼
@@ -258,8 +244,7 @@ WHERE received_at >= DATEADD(day, -120, CURRENT_DATE());
        │  Thompson   │
        │  Sampling   │
        │             │
-       │ CTR ou RPS  │
-       │ ou RPM      │
+       │ Otimiza CTR │
        └──────┬──────┘
               │
               │ Salva automaticamente
@@ -299,9 +284,9 @@ WHERE received_at >= DATEADD(day, -120, CURRENT_DATE());
 
 | Métrica | Fórmula | Descrição |
 |---------|---------|-----------|
-| **CTR** | clicks / impressions | Taxa de cliques por impressão |
-| **RPS** | revenue / sessions | Receita média por sessão |
-| **RPM** | (revenue / impressions) × 1000 | Receita por mil impressões |
+| **CTR** | clicks / impressions | Taxa de cliques por impressão (usada para otimização) |
+
+> **Nota:** Sessions e revenue são armazenados para auditoria, mas não são usados na otimização atual.
 
 ---
 
@@ -323,9 +308,9 @@ Se `daily_metrics` corromper, pode ser reconstruída a partir de `raw_metrics`.
 ## Exemplo de Dados
 
 ### experiments
-| id | name | optimization_target | status |
-|----|------|---------------------|--------|
-| abc-123 | teste_botao | rpm | active |
+| id | name | status |
+|----|------|--------|
+| abc-123 | teste_botao | active |
 
 ### variants
 | id | experiment_id | name | is_control |

@@ -14,7 +14,6 @@ erDiagram
         varchar_255 name UK
         text description
         varchar_20 status
-        varchar_20 optimization_target
         timestamp_ntz created_at
         timestamp_ntz updated_at
     }
@@ -125,7 +124,6 @@ erDiagram
                     │  name (UK)        │
                     │  description      │
                     │  status           │
-                    │  optimization_target
                     │  created_at       │
                     │  updated_at       │
                     └─────────┬─────────┘
@@ -170,10 +168,8 @@ erDiagram
               │                   │
               │ Thompson Sampling │
               │                   │
-              │ Otimiza:          │
-              │ - CTR (clicks/imp)│
-              │ - RPS (rev/sess)  │
-              │ - RPM (rev/imp)   │
+              │ Otimiza CTR       │
+              │ (clicks/imp)      │
               └─────────┬─────────┘
                         │
                         │ Salva automaticamente
@@ -197,7 +193,7 @@ erDiagram
 
 | Tabela | Escrita | Leitura | Propósito |
 |--------|---------|---------|-----------|
-| **experiments** | POST /experiments | GET /allocation | Cadastro do experimento e target de otimização |
+| **experiments** | POST /experiments | GET /allocation | Cadastro do experimento |
 | **variants** | POST /experiments | GET /allocation | Cadastro das variantes |
 | **raw_metrics** | POST /metrics | Auditoria/Debug | Backup append-only, rastreabilidade |
 | **daily_metrics** | POST /metrics | GET /allocation | Dados limpos para cálculo do algoritmo |
@@ -257,17 +253,13 @@ erDiagram
 
 ---
 
-## Métricas e Targets de Otimização
+## Métricas
 
-| Coluna | Usado para calcular |
-|--------|---------------------|
-| `sessions` | RPS (Revenue Per Session) |
-| `impressions` | CTR, RPM |
-| `clicks` | CTR |
-| `revenue` | RPS, RPM |
+| Coluna | Usado para |
+|--------|------------|
+| `impressions` | CTR (otimização) |
+| `clicks` | CTR (otimização) |
+| `sessions` | Armazenado para auditoria |
+| `revenue` | Armazenado para auditoria |
 
-| Target | Fórmula | Quando usar |
-|--------|---------|-------------|
-| `ctr` | clicks / impressions | Maximizar engajamento |
-| `rps` | revenue / sessions | Maximizar receita por sessão |
-| `rpm` | (revenue / impressions) × 1000 | Maximizar receita por impressão |
+> **Nota:** A API otimiza apenas CTR (clicks/impressions). Sessions e revenue são armazenados mas não usados no algoritmo.

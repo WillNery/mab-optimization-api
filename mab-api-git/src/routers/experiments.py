@@ -10,6 +10,7 @@ from src.models.allocation import AllocationResponse
 from src.services.experiment import ExperimentService
 from src.services.allocation import AllocationService
 from src.config import settings
+from src.rate_limit import check_daily_allocation_limit
 
 router = APIRouter(prefix="/experiments", tags=["Experiments"])
 
@@ -133,7 +134,14 @@ async def get_allocation(
     while still exploring underperforming variants.
     
     Note: Only works for experiments with status 'active'.
+    
+    Rate Limits:
+    - 300 requests per minute (burst protection)
+    - 3000 requests per day (cost protection)
     """
+    # Check daily limit first (cost protection)
+    check_daily_allocation_limit()
+    
     # Check experiment status
     experiment = ExperimentService.get_experiment(experiment_id)
     if not experiment:

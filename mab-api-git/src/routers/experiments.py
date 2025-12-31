@@ -177,6 +177,7 @@ async def get_history(experiment_id: str):
     """
     from src.repositories.metrics import MetricsRepository
     from src.repositories.experiment import ExperimentRepository
+    from src.services.allocation import wilson_score_interval
 
     # Verify experiment exists
     experiment = ExperimentRepository.get_experiment_by_id(experiment_id)
@@ -184,6 +185,13 @@ async def get_history(experiment_id: str):
         raise HTTPException(status_code=404, detail="Experiment not found")
 
     history = MetricsRepository.get_metrics_history(experiment_id)
+    
+    # Add CTR confidence interval to each record
+    for record in history:
+        impressions = int(record.get("impressions", 0))
+        clicks = int(record.get("clicks", 0))
+        ci = wilson_score_interval(clicks, impressions)
+        record["ctr_ci"] = {"lower": ci.lower, "upper": ci.upper} if ci else None
     
     return {
         "experiment_id": experiment_id,

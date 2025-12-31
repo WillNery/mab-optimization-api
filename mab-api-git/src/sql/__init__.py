@@ -154,6 +154,7 @@ class MetricsQueries:
         JOIN variants v ON v.id = m.variant_id
         WHERE v.experiment_id = %(experiment_id)s
         ORDER BY m.metric_date DESC, v.is_control DESC, v.name
+        LIMIT 90
     """
 
 

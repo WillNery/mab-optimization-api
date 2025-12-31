@@ -8,6 +8,10 @@ from src.main import app
 from src.rate_limit import rate_limiter, RateLimiter
 
 
+# UUID válido para testes - será reconhecido pelo get_endpoint_pattern
+TEST_EXPERIMENT_ID = "550e8400-e29b-41d4-a716-446655440000"
+
+
 class TestRateLimiter:
     """Unit tests for RateLimiter class."""
 
@@ -63,10 +67,10 @@ class TestRateLimitMiddleware:
         response = client.get("/health")
         
         # Health endpoint is excluded from rate limiting
-        # Test with a different endpoint
+        # Test with a different endpoint using valid UUID
         with patch("src.services.experiment.ExperimentRepository") as mock_repo:
             mock_repo.get_experiment_by_id.return_value = None
-            response = client.get("/experiments/test123")
+            response = client.get(f"/experiments/{TEST_EXPERIMENT_ID}")
         
         assert "X-RateLimit-Limit" in response.headers
         assert "X-RateLimit-Remaining" in response.headers
@@ -90,17 +94,14 @@ class TestRateLimitMiddleware:
             with patch("src.services.experiment.ExperimentRepository") as mock_repo:
                 mock_repo.get_experiment_by_id.return_value = None
                 
-                # Make requests up to the limit (120 for GET /experiments/{id})
-                # We'll use a lower limit endpoint: POST /experiments (10/min)
-                # But that requires valid data, so let's just verify the 429 response structure
-                
-                # Manually exhaust the rate limit
-                test_key = "test_client:GET /experiments/{experiment_id}"
+                # A chave correta usa "testclient" (o IP do TestClient)
+                # e o pattern normalizado do endpoint (com UUID → {experiment_id})
+                test_key = "testclient:GET /experiments/{experiment_id}"
                 for _ in range(120):
                     rate_limit.rate_limiter.is_allowed(test_key, max_requests=120, window_seconds=60)
                 
-                # This request should be rate limited
-                response = client.get("/experiments/test123")
+                # This request should be rate limited (usando UUID válido)
+                response = client.get(f"/experiments/{TEST_EXPERIMENT_ID}")
                 
                 assert response.status_code == 429
                 assert "Rate limit exceeded" in response.json()["detail"]["error"]
@@ -118,12 +119,13 @@ class TestRateLimitMiddleware:
             with patch("src.services.experiment.ExperimentRepository") as mock_repo:
                 mock_repo.get_experiment_by_id.return_value = None
                 
-                # Exhaust rate limit
-                test_key = "test_client:GET /experiments/{experiment_id}"
+                # A chave correta usa "testclient" (o IP do TestClient)
+                test_key = "testclient:GET /experiments/{experiment_id}"
                 for _ in range(120):
                     rate_limit.rate_limiter.is_allowed(test_key, max_requests=120, window_seconds=60)
                 
-                response = client.get("/experiments/test123")
+                # This request should be rate limited (usando UUID válido)
+                response = client.get(f"/experiments/{TEST_EXPERIMENT_ID}")
                 
                 assert response.status_code == 429
                 data = response.json()["detail"]

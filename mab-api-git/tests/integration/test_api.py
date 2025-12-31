@@ -2,7 +2,12 @@
 
 import pytest
 from unittest.mock import patch, MagicMock
-from datetime import datetime
+from datetime import datetime, timezone
+
+
+def utc_now():
+    """Helper para criar datetime UTC sem deprecation warning."""
+    return datetime.now(timezone.utc)
 
 
 class TestHealthEndpoint:
@@ -30,11 +35,11 @@ class TestExperimentEndpoints:
             "status": "active",
             "optimization_target": "ctr",
             "variants": [
-                {"id": "var_001", "name": "control", "is_control": True, "created_at": datetime.utcnow()},
-                {"id": "var_002", "name": "variant_a", "is_control": False, "created_at": datetime.utcnow()},
+                {"id": "var_001", "name": "control", "is_control": True, "created_at": utc_now()},
+                {"id": "var_002", "name": "variant_a", "is_control": False, "created_at": utc_now()},
             ],
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": utc_now(),
+            "updated_at": utc_now(),
         }
 
         response = client.post("/experiments", json=sample_experiment_data)
@@ -91,10 +96,10 @@ class TestExperimentEndpoints:
             "status": "active",
             "optimization_target": "ctr",
             "variants": [
-                {"id": "var_001", "name": "control", "is_control": True, "created_at": datetime.utcnow()},
+                {"id": "var_001", "name": "control", "is_control": True, "created_at": utc_now()},
             ],
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": utc_now(),
+            "updated_at": utc_now(),
         }
 
         response = client.get("/experiments/exp_123")
@@ -147,10 +152,11 @@ class TestMetricsEndpoints:
 
         assert response.status_code == 404
 
+    @patch("src.services.experiment.MetricsRepository")
     @patch("src.services.experiment.ExperimentRepository")
-    def test_record_metrics_invalid_variant(self, mock_repo, client):
+    def test_record_metrics_invalid_variant(self, mock_exp_repo, mock_metrics_repo, client):
         """Should return 400 for non-existent variant."""
-        mock_repo.get_experiment_by_id.return_value = {
+        mock_exp_repo.get_experiment_by_id.return_value = {
             "id": "exp_123",
             "status": "active",
             "variants": [

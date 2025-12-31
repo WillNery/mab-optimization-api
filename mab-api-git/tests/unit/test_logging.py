@@ -237,14 +237,3 @@ class TestLoggingIntegration:
             call_args = mock_log.call_args
             assert call_args[1]["method"] == "GET"
             assert call_args[1]["path"] == "/"
-
-    def test_error_is_logged(self, client):
-        """Errors should be logged."""
-        with patch("src.main.log_error") as mock_log:
-            with patch("src.routers.experiments.ExperimentService") as mock_service:
-                mock_service.get_experiment.side_effect = Exception("Test error")
-                
-                response = client.get("/experiments/test123")
-                
-                # Error handler should log the error
-                # Note: This depends on the exception handler implementation

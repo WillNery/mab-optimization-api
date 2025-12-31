@@ -14,7 +14,6 @@ CREATE TABLE IF NOT EXISTS experiments (
     name VARCHAR(255) NOT NULL UNIQUE,
     description TEXT,
     status VARCHAR(20) DEFAULT 'active',
-    optimization_target VARCHAR(20) DEFAULT 'ctr',
     created_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP(),
     updated_at TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
 );

@@ -334,6 +334,24 @@ class AllocationService:
         # Save to history
         if save_history:
             try:
+                # Build variant data with CI
+                variants_for_history = []
+                for v in variants:
+                    ci = wilson_score_interval(v.clicks, v.impressions)
+                    variants_for_history.append({
+                        "variant_id": v.variant_id,
+                        "variant_name": v.variant_name,
+                        "is_control": v.is_control,
+                        "allocation_percentage": allocations.get(v.variant_name, 0.0),
+                        "impressions": v.impressions,
+                        "clicks": v.clicks,
+                        "ctr": v.ctr,
+                        "ctr_ci_lower": ci.lower if ci else None,
+                        "ctr_ci_upper": ci.upper if ci else None,
+                        "beta_alpha": v.beta_alpha,
+                        "beta_beta": v.beta_beta,
+                    })
+                
                 AllocationHistoryRepository.save_allocation(
                     experiment_id=experiment_id,
                     computed_at=computed_at,
@@ -342,20 +360,7 @@ class AllocationService:
                     algorithm_version=ALGORITHM_VERSION,
                     seed=seed,
                     used_fallback=used_fallback,
-                    variants=[
-                        {
-                            "variant_id": v.variant_id,
-                            "variant_name": v.variant_name,
-                            "is_control": v.is_control,
-                            "allocation_percentage": allocations.get(v.variant_name, 0.0),
-                            "impressions": v.impressions,
-                            "clicks": v.clicks,
-                            "ctr": v.ctr,
-                            "beta_alpha": v.beta_alpha,
-                            "beta_beta": v.beta_beta,
-                        }
-                        for v in variants
-                    ],
+                    variants=variants_for_history,
                 )
             except Exception as e:
                 # Log but don't fail the request if history save fails

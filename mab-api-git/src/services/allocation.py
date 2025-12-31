@@ -1,6 +1,7 @@
 """Thompson Sampling implementation for Multi-Armed Bandit."""
 
 import hashlib
+import math
 from dataclasses import dataclass
 from datetime import datetime, date
 import time
@@ -15,6 +16,7 @@ from src.repositories.metrics import MetricsRepository
 from src.repositories.allocation_history import AllocationHistoryRepository
 from src.models.allocation import (
     AllocationResponse,
+    ConfidenceInterval,
     VariantAllocation,
     VariantMetrics,
 )
@@ -22,6 +24,50 @@ from src.logging_config import log_algorithm
 
 # Algorithm version - increment when logic changes
 ALGORITHM_VERSION = "1.0.0"
+
+# Z-score for 95% confidence interval
+Z_95 = 1.96
+
+
+def wilson_score_interval(clicks: int, impressions: int) -> Optional[ConfidenceInterval]:
+    """
+    Calculate Wilson Score confidence interval for CTR.
+    
+    More accurate than Wald interval for proportions, especially
+    when the proportion is close to 0 or 1, or when sample size is small.
+    
+    Formula:
+        center = (p + z²/2n) / (1 + z²/n)
+        margin = z × √(p(1-p)/n + z²/4n²) / (1 + z²/n)
+        lower = center - margin
+        upper = center + margin
+    
+    Args:
+        clicks: Number of successes (clicks)
+        impressions: Number of trials (impressions)
+        
+    Returns:
+        ConfidenceInterval or None if impressions is 0
+    """
+    if impressions == 0:
+        return None
+    
+    n = impressions
+    p = clicks / n
+    z = Z_95
+    z2 = z * z
+    
+    denominator = 1 + z2 / n
+    center = (p + z2 / (2 * n)) / denominator
+    margin = (z / denominator) * math.sqrt((p * (1 - p) / n) + (z2 / (4 * n * n)))
+    
+    lower = max(0.0, center - margin)
+    upper = min(1.0, center + margin)
+    
+    return ConfidenceInterval(
+        lower=round(lower, 6),
+        upper=round(upper, 6),
+    )
 
 
 @dataclass
@@ -269,6 +315,7 @@ class AllocationService:
                         impressions=v.impressions,
                         clicks=v.clicks,
                         ctr=round(v.ctr, 6),
+                        ctr_ci=wilson_score_interval(v.clicks, v.impressions),
                     ),
                 )
             )

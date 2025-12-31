@@ -201,7 +201,7 @@ source .venv/bin/activate  # Linux/Mac
 pip install -e ".[dev]"
 
 # Copiar configuração
-cp .env.example .env
+cp env.example .env
 # Editar .env com suas credenciais Snowflake
 ```
 
@@ -493,7 +493,7 @@ mab-api/
 │   ├── DATA_DICTIONARY.md
 │   ├── ERD.md
 │   └── API.md
-├── .env.example
+├── env.example
 ├── README.md
 └── pyproject.toml
 ```

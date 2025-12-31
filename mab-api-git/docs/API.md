@@ -28,6 +28,7 @@ Atualmente a API não requer autenticação. Para produção, recomenda-se imple
 | GET | `/health` | Verifica status da API |
 | POST | `/experiments` | Cria novo experimento |
 | GET | `/experiments/{id}` | Busca experimento por ID |
+| PATCH | `/experiments/{id}/status` | Atualiza status do experimento |
 | POST | `/experiments/{id}/metrics` | Registra métricas diárias |
 | GET | `/experiments/{id}/allocation` | Retorna alocação otimizada |
 | GET | `/experiments/{id}/history` | Retorna histórico de métricas |
@@ -61,7 +62,6 @@ Cria um novo experimento com suas variantes.
 {
   "name": "homepage_cta_test",
   "description": "Teste de cores do botão CTA na homepage",
-  "optimization_target": "rpm",
   "variants": [
     {
       "name": "control",
@@ -85,18 +85,9 @@ Cria um novo experimento com suas variantes.
 |-------|------|-------------|---------|-----------|
 | `name` | string | Sim | - | Nome único do experimento |
 | `description` | string | Não | null | Descrição do experimento |
-| `optimization_target` | string | Não | "ctr" | Métrica a otimizar: `ctr`, `rps`, `rpm` |
 | `variants` | array | Sim | - | Lista de variantes (mínimo 2) |
 | `variants[].name` | string | Sim | - | Nome da variante |
 | `variants[].is_control` | boolean | Sim | - | Se é a variante de controle |
-
-**Optimization Targets:**
-
-| Target | Métrica | Fórmula | Uso |
-|--------|---------|---------|-----|
-| `ctr` | Click-Through Rate | clicks / impressions | Maximizar engajamento |
-| `rps` | Revenue Per Session | revenue / sessions | Maximizar receita por usuário |
-| `rpm` | Revenue Per Mille | (revenue / impressions) × 1000 | Maximizar receita por inventário |
 
 **Validações:**
 - Deve ter pelo menos 1 variante com `is_control: true`
@@ -111,7 +102,6 @@ Cria um novo experimento com suas variantes.
   "name": "homepage_cta_test",
   "description": "Teste de cores do botão CTA na homepage",
   "status": "active",
-  "optimization_target": "rpm",
   "variants": [
     {
       "id": "194890c6-7b14-4431-8ed9-3d4dbd44262c",
@@ -176,7 +166,6 @@ Busca detalhes de um experimento.
   "name": "homepage_cta_test",
   "description": "Teste de cores do botão CTA na homepage",
   "status": "active",
-  "optimization_target": "rpm",
   "variants": [
     {
       "id": "194890c6-7b14-4431-8ed9-3d4dbd44262c",
@@ -201,6 +190,77 @@ Busca detalhes de um experimento.
 {
   "detail": "Experiment not found"
 }
+```
+
+---
+
+### `PATCH /experiments/{experiment_id}/status`
+
+Atualiza o status de um experimento.
+
+**Path Parameters:**
+
+| Parâmetro | Tipo | Descrição |
+|-----------|------|-----------|
+| `experiment_id` | string (UUID) | ID do experimento |
+
+**Request Body:**
+```json
+{
+  "status": "paused"
+}
+```
+
+**Parâmetros:**
+
+| Campo | Tipo | Obrigatório | Valores | Descrição |
+|-------|------|-------------|---------|-----------|
+| `status` | string | Sim | `active`, `paused`, `completed` | Novo status do experimento |
+
+**Status:**
+
+| Status | Descrição | Efeito no /allocation |
+|--------|-----------|----------------------|
+| `active` | Experimento em execução | Calcula alocação normalmente |
+| `paused` | Experimento pausado temporariamente | Retorna erro 400 |
+| `completed` | Experimento finalizado | Retorna erro 400 |
+
+**Response 200:**
+```json
+{
+  "id": "5d7e7894-f937-4b43-93a7-140adf619b32",
+  "name": "homepage_cta_test",
+  "description": "Teste de cores do botão CTA na homepage",
+  "status": "paused",
+  "variants": [...],
+  "created_at": "2025-01-15T10:30:00Z",
+  "updated_at": "2025-01-15T12:00:00Z"
+}
+```
+
+**Response 404 (Not Found):**
+```json
+{
+  "detail": "Experiment not found"
+}
+```
+
+**Exemplo de uso:**
+```bash
+# Pausar experimento
+curl -X PATCH http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619b32/status \
+  -H "Content-Type: application/json" \
+  -d '{"status": "paused"}'
+
+# Reativar experimento
+curl -X PATCH http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619b32/status \
+  -H "Content-Type: application/json" \
+  -d '{"status": "active"}'
+
+# Finalizar experimento
+curl -X PATCH http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619b32/status \
+  -H "Content-Type: application/json" \
+  -d '{"status": "completed"}'
 ```
 
 ---
@@ -319,14 +379,16 @@ Retorna a alocação de tráfego otimizada usando Thompson Sampling.
 |-----------|------|---------|-----------|
 | `window_days` | integer | 14 | Janela de análise em dias |
 
+**Pré-requisitos:**
+- Experimento deve estar com status `active`
+- Experimentos com status `paused` ou `completed` retornam erro 400
+
 **Algoritmo:**
 
 1. Busca métricas dos últimos `window_days` dias
 2. Se alguma variante tem < 10.000 impressões, expande para 30 dias
 3. Se ainda insuficiente, usa fallback (prior only)
-4. Calcula alocação baseado no `optimization_target` do experimento:
-   - **CTR**: Beta(α₀ + clicks, β₀ + impressions - clicks)
-   - **RPS/RPM**: Normal distribution com média e variância empíricas
+4. Calcula alocação usando Thompson Sampling (Beta-Bernoulli)
 5. Roda 10.000 simulações Monte Carlo
 6. Retorna % de vezes que cada variante "venceu"
 
@@ -336,8 +398,7 @@ Retorna a alocação de tráfego otimizada usando Thompson Sampling.
   "experiment_id": "5d7e7894-f937-4b43-93a7-140adf619b32",
   "experiment_name": "homepage_cta_test",
   "computed_at": "2025-01-16T00:00:00Z",
-  "algorithm": "thompson_sampling (target: rpm)",
-  "optimization_target": "rpm",
+  "algorithm": "thompson_sampling",
   "window_days": 14,
   "allocations": [
     {
@@ -345,17 +406,9 @@ Retorna a alocação de tráfego otimizada usando Thompson Sampling.
       "is_control": true,
       "allocation_percentage": 15.2,
       "metrics": {
-        "sessions": 70000,
         "impressions": 140000,
         "clicks": 4480,
-        "revenue": 2100.50,
-        "ctr": 0.032,
-        "ctr_ci": {
-          "lower": 0.0311,
-          "upper": 0.0329
-        },
-        "rps": 0.030,
-        "rpm": 15.00
+        "ctr": 0.032
       }
     },
     {
@@ -363,17 +416,9 @@ Retorna a alocação de tráfego otimizada usando Thompson Sampling.
       "is_control": false,
       "allocation_percentage": 84.8,
       "metrics": {
-        "sessions": 72000,
         "impressions": 140000,
         "clicks": 5880,
-        "revenue": 2750.25,
-        "ctr": 0.042,
-        "ctr_ci": {
-          "lower": 0.0410,
-          "upper": 0.0430
-        },
-        "rps": 0.038,
-        "rpm": 19.64
+        "ctr": 0.042
       }
     }
   ]
@@ -385,9 +430,16 @@ Retorna a alocação de tráfego otimizada usando Thompson Sampling.
 Quando não há dados suficientes:
 ```json
 {
-  "algorithm": "thompson_sampling (fallback: prior only, target: rpm)",
+  "algorithm": "thompson_sampling (fallback: prior only)",
   "window_days": 30,
   ...
+}
+```
+
+**Response 400 (Bad Request):**
+```json
+{
+  "detail": "Experiment is 'paused'. Only 'active' experiments can calculate allocation."
 }
 ```
 
@@ -458,14 +510,37 @@ A API possui rate limiting para proteger contra abuso e garantir disponibilidade
 
 ### Limites por Endpoint
 
-| Endpoint | Limite | Uso |
-|----------|--------|-----|
-| POST /experiments | 10/min | Criação de experimentos |
-| POST /metrics | 100/min | Ingestão de métricas |
-| GET /allocation | 300/min | Consulta de alocação (job diário) |
-| GET /history | 60/min | Consulta de histórico |
-| GET /experiments/{id} | 120/min | Consulta de experimento |
-| Default | 100/min | Outros endpoints |
+| Endpoint | Limite por Minuto | Limite Diário | Uso |
+|----------|-------------------|---------------|-----|
+| POST /experiments | 10/min | - | Criação de experimentos |
+| POST /metrics | 100/min | - | Ingestão de métricas |
+| GET /allocation | 300/min | 3000/dia | Consulta de alocação |
+| GET /history | 60/min | - | Consulta de histórico |
+| GET /experiments/{id} | 120/min | - | Consulta de experimento |
+| PATCH /experiments/{id}/status | 60/min | - | Atualização de status |
+| Default | 100/min | - | Outros endpoints |
+
+### Limite Diário de Alocação
+
+O endpoint `GET /allocation` possui um limite adicional de **3000 chamadas por dia** (reseta à meia-noite UTC). 
+
+**Por que esse limite existe?**
+- Cada chamada acorda o warehouse do Snowflake
+- Executa simulação Monte Carlo com 10.000 amostras
+- Gera custo de computação
+
+**Na prática:** Para uso típico (1 experimento, 1 chamada/dia), esse limite é mais que suficiente. Mesmo com 100 experimentos chamando 10x/dia, você ainda tem margem.
+
+**Response 429 (Limite Diário Excedido):**
+```json
+{
+  "detail": {
+    "error": "Daily allocation limit exceeded",
+    "limit": 3000,
+    "message": "Limite diário de 3000 cálculos atingido. Tente amanhã."
+  }
+}
+```
 
 ### Headers de Resposta
 
@@ -561,9 +636,9 @@ Os logs em JSON são compatíveis com:
 
 | Código | Significado | Quando ocorre |
 |--------|-------------|---------------|
-| 200 | OK | Requisição bem sucedida (GET) |
+| 200 | OK | Requisição bem sucedida (GET, PATCH) |
 | 201 | Created | Recurso criado com sucesso (POST) |
-| 400 | Bad Request | Requisição malformada |
+| 400 | Bad Request | Requisição malformada ou experimento não está ativo |
 | 404 | Not Found | Experimento ou variante não encontrado |
 | 409 | Conflict | Nome de experimento já existe |
 | 422 | Unprocessable Entity | Erro de validação |
@@ -587,7 +662,7 @@ Os logs em JSON são compatíveis com:
 }
 ```
 
-### Erro de Negócio (404, 409)
+### Erro de Negócio (400, 404, 409)
 ```json
 {
   "detail": "Mensagem descritiva do erro"
@@ -620,21 +695,20 @@ Os logs em JSON são compatíveis com:
 
 ### cURL
 
-**Criar experimento otimizando RPM:**
+**Criar experimento:**
 ```bash
 curl -X POST http://localhost:8000/experiments \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "teste_monetizacao",
-    "optimization_target": "rpm",
+    "name": "teste_botao",
     "variants": [
-      {"name": "layout_atual", "is_control": true},
-      {"name": "layout_novo", "is_control": false}
+      {"name": "azul", "is_control": true},
+      {"name": "verde", "is_control": false}
     ]
   }'
 ```
 
-**Enviar métricas com receita:**
+**Enviar métricas:**
 ```bash
 curl -X POST http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619b32/metrics \
   -H "Content-Type: application/json" \
@@ -642,18 +716,14 @@ curl -X POST http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619
     "date": "2025-01-15",
     "metrics": [
       {
-        "variant_name": "layout_atual",
-        "sessions": 5000,
+        "variant_name": "azul",
         "impressions": 10000,
-        "clicks": 320,
-        "revenue": 150.50
+        "clicks": 320
       },
       {
-        "variant_name": "layout_novo",
-        "sessions": 5200,
+        "variant_name": "verde",
         "impressions": 10000,
-        "clicks": 380,
-        "revenue": 195.75
+        "clicks": 380
       }
     ],
     "source": "gam"
@@ -663,6 +733,13 @@ curl -X POST http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619
 **Obter alocação:**
 ```bash
 curl http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619b32/allocation
+```
+
+**Pausar experimento:**
+```bash
+curl -X PATCH http://localhost:8000/experiments/5d7e7894-f937-4b43-93a7-140adf619b32/status \
+  -H "Content-Type: application/json" \
+  -d '{"status": "paused"}'
 ```
 
 **Verificar headers de rate limit:**
@@ -677,10 +754,9 @@ import requests
 
 BASE_URL = "http://localhost:8000"
 
-# Criar experimento otimizando receita por sessão
+# Criar experimento
 response = requests.post(f"{BASE_URL}/experiments", json={
-    "name": "teste_rps",
-    "optimization_target": "rps",
+    "name": "teste_ctr",
     "variants": [
         {"name": "control", "is_control": True},
         {"name": "treatment", "is_control": False}
@@ -693,23 +769,19 @@ experiment_id = experiment["id"]
 print(f"Rate Limit: {response.headers.get('X-RateLimit-Limit')}")
 print(f"Remaining: {response.headers.get('X-RateLimit-Remaining')}")
 
-# Enviar métricas com sessões e receita
+# Enviar métricas
 requests.post(f"{BASE_URL}/experiments/{experiment_id}/metrics", json={
     "date": "2025-01-15",
     "metrics": [
         {
             "variant_name": "control",
-            "sessions": 5000,
             "impressions": 10000,
-            "clicks": 300,
-            "revenue": 125.00
+            "clicks": 300
         },
         {
             "variant_name": "treatment",
-            "sessions": 5100,
             "impressions": 10000,
-            "clicks": 320,
-            "revenue": 175.50
+            "clicks": 350
         }
     ]
 })
@@ -718,11 +790,15 @@ requests.post(f"{BASE_URL}/experiments/{experiment_id}/metrics", json={
 response = requests.get(f"{BASE_URL}/experiments/{experiment_id}/allocation")
 allocation = response.json()
 
-print(f"Otimizando: {allocation['optimization_target']}")
+print(f"Algoritmo: {allocation['algorithm']}")
 for variant in allocation["allocations"]:
     print(f"{variant['variant_name']}: {variant['allocation_percentage']}%")
-    print(f"  RPM: ${variant['metrics']['rpm']:.2f}")
-    print(f"  RPS: ${variant['metrics']['rps']:.4f}")
+    print(f"  CTR: {variant['metrics']['ctr']:.4f}")
+
+# Pausar experimento quando terminar
+requests.patch(f"{BASE_URL}/experiments/{experiment_id}/status", json={
+    "status": "completed"
+})
 ```
 
 ---

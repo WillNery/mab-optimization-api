@@ -3,8 +3,7 @@
 import time
 from collections import defaultdict
 from datetime import date
-from typing import Callable, Optional
-from functools import wraps
+from typing import Callable
 
 from fastapi import HTTPException, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -105,7 +104,7 @@ class DailyAllocationLimit:
             return False, 0
         
         self._calls[today] = current + 1
-        return self.max_per_day - current - 1
+        return True, self.max_per_day - current - 1
     
     def remaining(self) -> int:
         """Retorna quantas chamadas ainda pode fazer hoje."""
@@ -189,6 +188,8 @@ def check_daily_allocation_limit():
                 "message": f"Limite diário de {daily_allocation_limit.max_per_day} cálculos atingido. Tente amanhã.",
             },
         )
+    
+    return remaining
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):

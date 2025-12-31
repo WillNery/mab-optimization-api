@@ -37,7 +37,6 @@ class ExperimentService:
             name=data.name,
             description=data.description,
             variants=variants,
-            optimization_target=data.optimization_target.value,
         )
 
         return ExperimentResponse(
@@ -45,7 +44,6 @@ class ExperimentService:
             name=result["name"],
             description=result["description"],
             status=result["status"],
-            optimization_target=result["optimization_target"],
             variants=[
                 VariantResponse(
                     id=v["id"],
@@ -79,7 +77,6 @@ class ExperimentService:
             name=result["name"],
             description=result["description"],
             status=result["status"],
-            optimization_target=result.get("optimization_target", "ctr"),
             variants=[
                 VariantResponse(
                     id=v["id"],

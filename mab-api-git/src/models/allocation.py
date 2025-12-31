@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -15,16 +15,23 @@ class ConfidenceInterval(BaseModel):
 
 
 class VariantMetrics(BaseModel):
-    """Metrics for a single variant."""
+    """
+    Metrics for a single variant.
+    
+    Campos obrigatórios: impressions, clicks, ctr
+    Campos opcionais: sessions, revenue, ctr_ci, rps, rpm
+    """
 
-    sessions: int = Field(..., description="Total sessions in the window")
     impressions: int = Field(..., description="Total impressions in the window")
     clicks: int = Field(..., description="Total clicks in the window")
-    revenue: Decimal = Field(..., description="Total revenue in the window (USD)")
     ctr: float = Field(..., description="Click-through rate (clicks/impressions)")
-    ctr_ci: ConfidenceInterval = Field(..., description="95% confidence interval for CTR (Wilson Score)")
-    rps: float = Field(..., description="Revenue per session (revenue/sessions)")
-    rpm: float = Field(..., description="Revenue per mille (revenue/impressions * 1000)")
+    
+    # Campos opcionais - podem não estar disponíveis dependendo da fonte de dados
+    sessions: Optional[int] = Field(default=None, description="Total sessions in the window")
+    revenue: Optional[Decimal] = Field(default=None, description="Total revenue in the window (USD)")
+    ctr_ci: Optional[ConfidenceInterval] = Field(default=None, description="95% CI for CTR (Wilson Score)")
+    rps: Optional[float] = Field(default=None, description="Revenue per session (revenue/sessions)")
+    rpm: Optional[float] = Field(default=None, description="Revenue per mille (revenue/impressions * 1000)")
 
 
 class VariantAllocation(BaseModel):
@@ -61,43 +68,27 @@ class AllocationResponse(BaseModel):
                     "experiment_name": "homepage_cta_test",
                     "computed_at": "2025-01-16T00:00:00Z",
                     "algorithm": "thompson_sampling",
-                    "optimization_target": "rps",
+                    "optimization_target": "ctr",
                     "window_days": 14,
                     "allocations": [
                         {
                             "variant_name": "control",
                             "is_control": True,
-                            "allocation_percentage": 15.2,
+                            "allocation_percentage": 35.2,
                             "metrics": {
-                                "sessions": 70000,
                                 "impressions": 140000,
                                 "clicks": 4480,
-                                "revenue": 2100.50,
                                 "ctr": 0.032,
-                                "ctr_ci": {
-                                    "lower": 0.0311,
-                                    "upper": 0.0329
-                                },
-                                "rps": 0.030,
-                                "rpm": 15.00
                             },
                         },
                         {
                             "variant_name": "variant_a",
                             "is_control": False,
-                            "allocation_percentage": 84.8,
+                            "allocation_percentage": 64.8,
                             "metrics": {
-                                "sessions": 72000,
                                 "impressions": 140000,
                                 "clicks": 5880,
-                                "revenue": 2750.25,
                                 "ctr": 0.042,
-                                "ctr_ci": {
-                                    "lower": 0.0410,
-                                    "upper": 0.0430
-                                },
-                                "rps": 0.038,
-                                "rpm": 19.64
                             },
                         },
                     ],

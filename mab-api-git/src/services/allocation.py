@@ -180,9 +180,10 @@ class ThompsonSamplingEngine:
             for v in variants
         }
 
-        # Count wins for each variant
+        # Count wins for each variant (dicionário para as vitórias)
         wins = {v.variant_name: 0 for v in variants}
-        
+
+        # loop que roda 10K monte Carlo 
         for i in range(self.n_samples):
             # Find variant with highest sampled theta in this simulation
             best_variant = max(

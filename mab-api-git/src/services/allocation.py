@@ -105,6 +105,7 @@ def generate_deterministic_seed(experiment_id: str, target_date: date) -> int:
 
 class ThompsonSamplingEngine:
     """
+    Calculadora
     Thompson Sampling implementation for CTR optimization.
     
     Uses Beta-Bernoulli conjugate model:
@@ -207,7 +208,8 @@ class ThompsonSamplingEngine:
 
 
 class AllocationService:
-    """Service for computing traffic allocations."""
+    """Orquestra o processo: busca usa e anota
+    Service for computing traffic allocations."""
 
     def __init__(self):
         self.engine = ThompsonSamplingEngine()

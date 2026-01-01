@@ -143,6 +143,23 @@ Em cada rodada:
 3. Repetimos o processo múltiplas vezes
 4. A alocação final é a proporção de vezes que cada variante foi selecionada
 
+### Intervalo de Confiança (Wilson Score)
+
+Além da alocação, a API calcula o **intervalo de confiança de 95%** para o CTR de cada variante usando o método Wilson Score:
+
+```
+center = (p + z²/2n) / (1 + z²/n)
+margin = z × √(p(1-p)/n + z²/4n²) / (1 + z²/n)
+
+IC = [center - margin, center + margin]
+```
+
+Onde `p` é o CTR observado, `n` é o número de impressões, e `z = 1.96` para 95% de confiança.
+
+**Por que Wilson Score?** É mais preciso que o intervalo de Wald para proporções próximas de 0 ou 1, comum em CTR de ads.
+
+**Uso prático:** Se os intervalos de duas variantes não se sobrepõem, há diferença estatisticamente significativa entre elas.
+
 ---
 
 ## Janela Temporal e Fallback
@@ -201,7 +218,7 @@ source .venv/bin/activate  # Linux/Mac
 pip install -e ".[dev]"
 
 # Copiar configuração
-cp env.example .env
+cp .env.example .env
 # Editar .env com suas credenciais Snowflake
 ```
 
@@ -493,7 +510,7 @@ mab-api/
 │   ├── DATA_DICTIONARY.md
 │   ├── ERD.md
 │   └── API.md
-├── env.example
+├── .env.example
 ├── README.md
 └── pyproject.toml
 ```
